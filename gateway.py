@@ -1,5 +1,5 @@
-# BABA WALLET GATEWAY - DIAMOND EDITION
-# Features: Gunicorn (Gevent), Redis Rate Limiting, Env Config, Strict Socket Management
+# BABA WALLET GATEWAY - DIAMOND EDITION (V33 - UserData Parsing Optimized)
+
 from gevent import monkey
 monkey.patch_all()
 
@@ -7,6 +7,8 @@ import os
 import sys
 import struct
 import base58
+import math
+from datetime import datetime, timezone
 from datetime import datetime
 from decimal import Decimal, getcontext
 from dotenv import load_dotenv
@@ -53,14 +55,14 @@ limiter = Limiter(
 
 @limiter.request_filter
 def ip_whitelist():
-    """Skips the rate limiter for IPs defined in the environment whitelist."""
+    
     return request.remote_addr in WHITELIST_IPS
 
 app.url_map.strict_slashes = False
 
 # --- HELPERS ---
 def log(msg, is_error=False):
-    """Sanitized logging. Only prints to stdout/stderr, never sent to client."""
+   
     if DEBUG_LOGGING or is_error:
         prefix = "[ERROR]" if is_error else "[INFO]"
         print(f"{prefix} [{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -69,7 +71,7 @@ def get_node_client():
     transport = None
     try:
         socket = TSocket.TSocket(NODE_IP, NODE_PORT)
-        socket.setTimeout(5000)
+        socket.setTimeout(10000)
         transport = TTransport.TBufferedTransport(socket)
         protocol = TBinaryProtocol.TBinaryProtocol(transport)
         client = API.Client(protocol)
@@ -93,34 +95,58 @@ def safe_int(val, default=0):
         return int(val)
     except: return default
 
-def fee_to_bits(fee_str):
+def get_k_ten(index):
+   
+    k_tens = (1e-18, 1e-17, 1e-16, 1e-15, 1e-14, 1e-13, 1e-12, 1e-11, 
+              1e-10, 1e-9,  1e-8,  1e-7,  1e-6,  1e-5,  1e-4,  1e-3,
+              1e-2,  1e-1,  1.0,   1e1,   1e2,   1e3,   1e4,   1e5,   
+              1e6,   1e7,   1e8,   1e9,   1e10,  1e11,  1e12,  1e13)
+    return k_tens[index] if 0 <= index < 32 else 0.0
+
+def fee_to_bits(fee_val):
+    
     try:
-        val = Decimal(str(fee_str).strip())
-        if val <= 0: return 0
-        constant = Decimal('26214400')
-        value = val * constant
-        best_m, best_e, min_diff = 0, 0, Decimal('inf')
-        for e in range(9):
-            power = Decimal(2) ** e
-            m_temp = (value / power).to_integral_value(rounding='ROUND_HALF_UP')
-            m = int(m_temp)
-            if m > 2047: m = 2047
-            if m < 0: m = 0
-            diff = abs(value - Decimal(m) * power)
-            if diff < min_diff or (diff == min_diff and e > best_e):
-                min_diff = diff
-                best_m, best_e = m, e
-        return (best_e << 11) | best_m
-    except: return 18431
+        val = float(fee_val)
+        fee_commission = 0
+        
+        if val < 0.0:
+            fee_commission += 32768
+        else:
+            
+            val = math.fabs(val)
+            expf = 0.0 if val == 0.0 else math.log10(val)
+            expi = int(expf + 0.5 if expf >= 0.0 else expf - 0.5)
+            
+            # Avoid division by zero issues by checking val
+            if val > 0:
+                val /= math.pow(10, expi)
+                
+            if val >= 1.0:
+                val *= 0.1
+                expi += 1
+                
+            fee_commission += int(1024 * (expi + 18))
+            fee_commission += int(val * 1024)
+            
+        return fee_commission
+    except (ValueError, TypeError):
+        return 0
 
 def bits_to_fee(bits):
     try:
         raw = getattr(bits, 'commission', getattr(bits, 'value', int(bits) if isinstance(bits, (int,str)) else 0))
-        if raw == 0: return Decimal('0')
-        mantissa = Decimal(raw & 0x7FF)
-        exponent = raw >> 11
-        return mantissa * (Decimal(2) ** exponent) / Decimal(26214400)
-    except: return Decimal('0')
+        if raw == 0: 
+            return Decimal('0')
+
+        sign = -1.0 if int(raw / 32768) != 0 else 1.0
+        idx = int(raw % 32768 / 1024)
+        mantissa = float(raw % 1024)
+        
+        fee_double = sign * mantissa * (1.0 / 1024.0) * get_k_ten(idx)
+        
+        return Decimal(str(fee_double))
+    except Exception:
+        return Decimal('0')
 
 def parse_amount(amount_val):
     amount_str = str(amount_val).strip()
@@ -133,8 +159,23 @@ def parse_amount(amount_val):
     except: return Amount(0, 0)
 
 def full_decimal(val):
-    try: return f"{Decimal(str(val)):.18f}"
-    except: return str(val)
+    """Ensures a clean string representation with at least one decimal place (e.g., '1.0')."""
+    if not val: 
+        return "0.0"
+        
+    try:
+        # If it's a Thrift Amount object, format it first
+        if hasattr(val, 'integral'):
+            val = format_amount(val, as_str=True)
+            
+        # Use Decimal to normalize (strips trailing zeros)
+        dec_val = Decimal(str(val)).normalize()
+        
+        # Determine string output, forcing .0 if it's an integer
+        str_val = f"{dec_val:f}"
+        return str_val if '.' in str_val else f"{str_val}.0"
+    except Exception:
+        return "0.0"
 
 def get_fee_multiplier(size):
     if size < 5120: return Decimal(1)
@@ -143,42 +184,119 @@ def get_fee_multiplier(size):
     else: return Decimal(2048)
 
 # --- SERIALIZATION ---
-def serialize_transaction(inner_id, source, target, amt_i, amt_f, fee_bits, currency=1, user_data=b''):
+def build_user_fields(user_data_text=None, is_delegation=False, del_dis=False, date_exp=None):
+    
+    if is_delegation:
+        exp_val = 2 if del_dis else (int(date_exp) if date_exp else 1)
+        val_bytes = struct.pack('<q', exp_val) # 8-byte integer
+        
+        # Node payload (ufBytes)
+        uf_bytes = bytearray(b'\x00')           
+        uf_bytes.extend(b'\x01')          
+        uf_bytes.extend(b'\x05\x00\x00\x00')    
+        uf_bytes.extend(b'\x01')                 
+        uf_bytes.extend(val_bytes)          
+        
+        # Signature payload (sfBytes)
+        sf_bytes = bytearray(b'\x01')       
+        sf_bytes.extend(val_bytes)                    
+        
+        return bytes(uf_bytes), bytes(sf_bytes)
+
+    if user_data_text:
+        ud_bytes = user_data_text.encode('utf-8')
+        ud_len = len(ud_bytes)
+
+        # Node payload (ufBytes)
+        uf_bytes = bytearray(b'\x00')
+        uf_bytes.extend(b'\x01')                    
+        uf_bytes.extend(b'\x01\x00\x00\x00')     
+        uf_bytes.extend(b'\x02')                      
+        uf_bytes.extend(ud_len.to_bytes(4, 'little'))
+        uf_bytes.extend(ud_bytes)
+
+        # Signature payload (sfBytes)
+        sf_bytes = bytearray(b'\x01')
+        sf_bytes.extend(ud_len.to_bytes(4, 'little'))
+        sf_bytes.extend(ud_bytes)
+
+        return bytes(uf_bytes), bytes(sf_bytes)
+
+    return b'', b'\x00'
+
+def serialize_transaction(inner_id, source, target, amt_i, amt_f, fee_bits, currency=1, sf_bytes=b'\x00'):
     data = struct.pack('<Q', inner_id)[:6] + source + target
     data += struct.pack('<i', amt_i) + struct.pack('<q', amt_f)
     data += struct.pack('<H', fee_bits) + struct.pack('B', currency)
-    if len(user_data) == 0: data += b'\x00'
-    else: data += struct.pack('B', len(user_data)) + user_data
+    data += sf_bytes
     return data
 
-def serialize_delegation(inner_id, source, target, amt_i, amt_f, fee_bits, is_revoke, expiry):
-    header = struct.pack('<Q', inner_id)[:6] + source + target
-    header += struct.pack('<i', amt_i) + struct.pack('<q', amt_f)
-    header += struct.pack('<H', fee_bits) + b'\x01'
-    payload = b'\x01' + struct.pack('<q', 2 if is_revoke else expiry)
-    return header + payload
+MAX_FRACTION_RANGE = Decimal('1000000000000000000') # 1e18
 
-def format_amount(obj, as_str=False, force_decimal=False):
-    if obj is None: return "0" if as_str else 0
-    if hasattr(obj, 'integral'):
-        integral = obj.integral or 0
-        fraction = obj.fraction or 0
-        if fraction == 0:
-            return f"{integral}.0" if as_str and force_decimal else (f"{integral}" if as_str else integral)
-        val_str = f"{integral}.{str(fraction).zfill(18)}".rstrip('0').rstrip('.')
-        return val_str if as_str else float(val_str)
-    val = bits_to_fee(obj) if hasattr(obj, 'commission') else Decimal(str(obj))
-    if as_str:
-        s = format(val, '.18f').rstrip('0').rstrip('.')
-        return s + '.0' if force_decimal and '.' not in s else s
-    return float(val)
+def format_amount(amt_obj, as_str=False, force_decimal=False):
+    """Converts Thrift Amount object to numeric/string, avoiding float precision loss."""
+    if not amt_obj: return "0.0" if as_str else 0
+    
+    integral = getattr(amt_obj, 'integral', 0)
+    fraction = getattr(amt_obj, 'fraction', 0)
+    
+    if fraction == 0 and not force_decimal:
+        return str(integral) if as_str else integral
+        
+    val = Decimal(integral) + (Decimal(fraction) / MAX_FRACTION_RANGE)
+    return str(val) if as_str else float(val)
+
+
+
+# --- UNIFIED PARSING HELPERS ---
+
+def parse_currency(curr_code):
+    
+    curr_code = safe_int(curr_code, 1)
+    
+    return "CS" if curr_code == 1 else str(curr_code)
+
+def parse_status(obj):
+    
+    status_obj = getattr(obj, 'status', None)
+    if status_obj:
+        code = getattr(status_obj, 'code', 0)
+        message = getattr(status_obj, 'message', '')
+        if code == 0 or 'Success' in message:
+            return "Success"
+        return message.strip() if message else "Failed"
+    
+    return "Success"
+
+def parse_node_time(t_val):
+    
+    if not t_val:
+        return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    try:
+        
+        dt = datetime.fromtimestamp(t_val / 1000.0, tz=timezone.utc)
+        return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    except Exception:
+        return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+
+def safe_b58(val):
+    
+    if not val:
+        return None
+    try:
+        return base58.b58encode(val).decode('utf-8')
+    except Exception:
+        return None
+
+# --- STANDARDIZED MAPPING FUNCTIONS ---
 
 def map_delegated_item(item):
     if not item: return None
-    pub_key = base58.b58encode(getattr(item, 'wallet', b'')).decode('utf-8')
+    
     sum_val = format_amount(getattr(item, 'sum', None) or getattr(item, 'amount', None))
+    
     return {
-        "publicKey": pub_key,
+        "publicKey": safe_b58(getattr(item, 'wallet', b'')),
         "sum": int(sum_val) if sum_val == int(sum_val) else sum_val,
         "validUntil": safe_int(getattr(item, 'validUntil', 0)),
         "validFrom": safe_int(getattr(item, 'fromTime', 0)),
@@ -186,30 +304,33 @@ def map_delegated_item(item):
     }
 
 def map_transaction_to_dict(tx, inner_id):
+    if not tx: return None
+    
+    
     data = getattr(tx, 'trxn', tx)
+    
+  
     tx_id_raw = getattr(tx, 'id', 0)
-    final_id = f"{getattr(tx_id_raw, 'poolSeq', 0)}.{getattr(tx_id_raw, 'index', 0) + 1}" if hasattr(tx_id_raw, 'poolSeq') else "0"
-    source = base58.b58encode(getattr(data, 'source', b'')).decode('utf-8')
-    target = base58.b58encode(getattr(data, 'target', b'')).decode('utf-8')
-    fee_val = bits_to_fee(getattr(data, 'fee', None))
-    t_val = getattr(data, 'timeCreation', 0) or getattr(tx, 'timeCreation', 0)
-    time_str = datetime.utcnow().isoformat() + "Z"
-    if t_val:
-        try: time_str = datetime.utcfromtimestamp(t_val / 1000.0).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-        except: pass
-
+    final_id = "0"
+    if hasattr(tx_id_raw, 'poolSeq') and hasattr(tx_id_raw, 'index'):
+        final_id = f"{tx_id_raw.poolSeq}.{tx_id_raw.index + 1}"
+    
+    
+    currency_code = getattr(data, 'currency', 1) 
+    
     return {
-        "currency": "CS",
-        "fee": format_amount(fee_val, as_str=True, force_decimal=True),
-        "fromAccount": source,
         "id": final_id,
         "innerId": inner_id,
-        "status": "Success",
+        "type": str(getattr(data, 'type', 0)),
+        "status": parse_status(tx),                     
+        "currency": parse_currency(currency_code),      
+        "fromAccount": safe_b58(getattr(data, 'source', b'')),
+        "toAccount": safe_b58(getattr(data, 'target', b'')),
         "sum": format_amount(getattr(data, 'amount', None), as_str=True, force_decimal=True),
-        "time": time_str,
-        "toAccount": target,
-        "type": str(getattr(data, 'type', 0))
+        "fee": full_decimal(bits_to_fee(getattr(data, 'fee', None))),
+        "time": parse_node_time(getattr(data, 'timeCreation', 0) or getattr(tx, 'timeCreation', 0))
     }
+
 
 # --- ENDPOINTS ---
 
@@ -270,24 +391,99 @@ def get_history():
     finally:
         if transport and transport.isOpen(): transport.close()
 
-@app.route('/Monitor/GetEstimatedFee', methods=['POST'])
-@app.route('/api/Monitor/GetEstimatedFee', methods=['POST'])
-@limiter.limit("5 per second")
-def get_fee():
-    data = request.json
-    if not data: return jsonify({"success": False}), 400
-    tx_size = int(get_json_val(data, ['transactionSize'], 0))
+
+
+
+@app.route('/api/Transaction/GetTransactionInfo', methods=['POST'])
+@limiter.limit("5 per 10 seconds")
+def handle_get_transaction_info():
+    data_req = request.json
+    if not data_req: return jsonify({"success": False, "message": "Empty"}), 400
+    
+    tx_id_str = get_json_val(data_req, ['transactionId', 'TransactionId'], '')
+    if not tx_id_str or '.' not in tx_id_str:
+        return jsonify({"success": False, "message": "Invalid Transaction ID format"}), 400
+        
     client, transport = get_node_client()
     if not client: return jsonify({"success": False}), 503
     
     try:
-        base_fee = bits_to_fee(getattr(client.ActualFeeGet(0), 'fee', 0))
-        return jsonify({"fee": float(base_fee * get_fee_multiplier(tx_size)), "success": True, "message": ""})
+        pool_seq_str, index_str = tx_id_str.split('.')
+        pool_seq = int(pool_seq_str)
+        tx_index = int(index_str) - 1 
+        
+        tx_id_obj = api_types.TransactionId()
+        tx_id_obj.poolSeq = pool_seq
+        tx_id_obj.index = tx_index
+        
+        tx_res = client.TransactionGet(tx_id_obj)
+        
+        found = getattr(tx_res, 'found', False)
+        sealed_tx = getattr(tx_res, 'transaction', None)
+        
+        if not found or not sealed_tx:
+            return jsonify({"success": False, "message": "Transaction not found on node", "found": False}), 404
+            
+        data = getattr(sealed_tx, 'trxn', sealed_tx)
+        
+        base_fee_dec = Decimal(str(bits_to_fee(getattr(data.fee, 'commission', 0) if hasattr(data, 'fee') else 0)))
+        
+        extra_fees = getattr(data, 'extraFee', []) or getattr(sealed_tx, 'extraFee', [])
+        mapped_extra_fees = []
+        
+        if extra_fees:
+            total_extra_dec = Decimal('0.0')
+            for ef in extra_fees:
+                
+                ef_val_dec = Decimal(str(bits_to_fee(getattr(ef, 'commission', 0))))
+                total_extra_dec += ef_val_dec
+                mapped_extra_fees.append({}) 
+                
+            total_fee_dec = base_fee_dec + total_extra_dec
+            fee_str = f"(sum of {len(extra_fees)}) {total_fee_dec}"
+        else:
+            fee_str = str(base_fee_dec)
+        
+        amt_val = format_amount(getattr(data, 'amount', None))
+        type_int = getattr(data, 'type', 0)
+        
+        
+        type_defs = {
+            0: "TT_Normal", 1: "TT_SmartDeploy", 2: "TT_SmartExecute", 
+            3: "TT_SmartState", 4: "TT_ContractReplenish"
+        }
+        
+        return jsonify({
+            "id": tx_id_str,
+            "fromAccount": safe_b58(getattr(data, 'source', b'')),
+            "toAccount": safe_b58(getattr(data, 'target', b'')),
+            "time": parse_node_time(getattr(data, 'timeCreation', 0) or getattr(sealed_tx, 'timeCreation', 0)),
+            "value": str(amt_val),
+            "val": float(amt_val),
+            "fee": fee_str, 
+            "currency": parse_currency(getattr(data, 'currency', 1)),
+            "innerId": getattr(data, 'id', 0),
+            "index": tx_index,
+            "status": parse_status(sealed_tx) or parse_status(data),
+            "transactionType": type_int,
+            "transactionTypeDefinition": type_defs.get(type_int, f"TT_Unknown_{type_int}"),
+            "blockNum": pool_seq_str,
+            "found": True,
+            "userData": getattr(data, 'userFields', b'').decode('utf-8', 'ignore'),
+            "signature": safe_b58(getattr(data, 'signature', b'') or getattr(sealed_tx, 'signature', b'')),
+            "extraFee": mapped_extra_fees, 
+            "bundle": None,
+            "success": True,
+            "message": None
+        })
+        
     except Exception as e:
-        log(f"GetFee Error: {e}", is_error=True)
-        return jsonify({"success": False, "message": "Failed to estimate fee"}), 400
+        log(f"GetTransactionInfo Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": str(e), "found": False}), 500
+        
     finally:
         if transport and transport.isOpen(): transport.close()
+
 
 @app.route('/Monitor/GetBalance', methods=['POST'])
 @app.route('/api/Monitor/GetBalance', methods=['POST'])
@@ -313,6 +509,25 @@ def get_balance():
         return jsonify({"success": False, "message": "Failed to retrieve balance"}), 400
     finally:
         if transport and transport.isOpen(): transport.close()
+
+@app.route('/Monitor/GetEstimatedFee', methods=['POST'])
+@app.route('/api/Monitor/GetEstimatedFee', methods=['POST'])
+@limiter.limit("5 per second")
+def get_fee():
+    data = request.json
+    if not data: return jsonify({"success": False}), 400
+    tx_size = int(get_json_val(data, ['transactionSize'], 0))
+    client, transport = get_node_client()
+    if not client: return jsonify({"success": False}), 503
+    
+    try:
+        base_fee = bits_to_fee(getattr(client.ActualFeeGet(0), 'fee', 0))
+        return jsonify({"fee": float(base_fee * get_fee_multiplier(tx_size)), "success": True, "message": ""})
+    except Exception as e:
+        log(f"GetFee Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": "Failed to estimate fee"}), 400
+    finally:
+        if transport and transport.isOpen(): transport.close()        
 
 @app.route('/Transaction/Pack', methods=['POST'])
 @app.route('/api/Transaction/Pack', methods=['POST'])
@@ -342,22 +557,25 @@ def pack_transaction():
         
         new_id = safe_int(getattr(wdata, 'lastTransactionId', 0)) + 1
         is_del = del_en or del_dis
-        size = 9 if is_del else len(user_data.encode('utf-8'))
+        
+        uf_bytes, sf_bytes = build_user_fields(
+            user_data_text=user_data, 
+            is_delegation=is_del, 
+            del_dis=del_dis, 
+            date_exp=date_exp
+        )
+        size = 9 if is_del else len(uf_bytes)
+        
         base_res = client.ActualFeeGet(0)
-        
-        
         base_fee = bits_to_fee(getattr(base_res, 'fee', base_res))
         rec_fee = float(base_fee) * float(get_fee_multiplier(size))
         use_fee = float(fee_str) if float(fee_str) > 0 else rec_fee
         fee_bits = fee_to_bits(use_fee)
         amt = parse_amount(amt_str)
         
-        if is_del:
-            exp_val = 2 if del_dis else (int(date_exp) if date_exp else 1)
-            packed = serialize_delegation(new_id, sender, target, amt.integral, amt.fraction, fee_bits, del_dis, exp_val)
-        else:
-            ud = user_data.encode('utf-8') if user_data else b''
-            packed = serialize_transaction(new_id, sender, target, amt.integral, amt.fraction, fee_bits, user_data=ud)
+        packed = serialize_transaction(
+            new_id, sender, target, amt.integral, amt.fraction, fee_bits, sf_bytes=sf_bytes
+        )
             
         return jsonify({
             "success": True,
@@ -401,7 +619,15 @@ def execute():
         
         new_id = safe_int(getattr(wdata, 'lastTransactionId', 0)) + 1
         is_del = del_en or del_dis
-        size = 9 if is_del else len(user_data.encode('utf-8'))
+        
+        uf_bytes, sf_bytes = build_user_fields(
+            user_data_text=user_data, 
+            is_delegation=is_del, 
+            del_dis=del_dis, 
+            date_exp=date_exp
+        )
+        size = 9 if is_del else len(uf_bytes)
+        
         base_fee = bits_to_fee(getattr(client.ActualFeeGet(0), 'fee', 0))
         rec_fee = float(base_fee) * float(get_fee_multiplier(size))
         use_fee = float(fee_str) if float(fee_str) > 0 else rec_fee
@@ -417,16 +643,8 @@ def execute():
         tx.fee = AmountCommission(commission=int(fee_bits))
         tx.signature = base58.b58decode(sig)
         
-        if is_del:
-            exp_val = 2 if del_dis else (int(date_exp) if date_exp else 1)
-            payload = b'\x01' + struct.pack('<q', exp_val)
-            node_header = bytes.fromhex("000105000000")
-            tx.userFields = node_header + payload
-            tx.type = 7
-        else:
-            ud = user_data.encode('utf-8') if user_data else b''
-            tx.userFields = ud
-            tx.type = 0
+        tx.userFields = uf_bytes
+        
             
         res = client.TransactionFlow(tx)
         
@@ -451,6 +669,7 @@ def execute():
         return jsonify({"success": False, "message": "Failed to execute transaction"}), 400
     finally:
         if transport and transport.isOpen(): transport.close()
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
