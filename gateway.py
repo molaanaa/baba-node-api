@@ -26,6 +26,8 @@ NODE_PORT = int(os.getenv('NODE_PORT', 9090))
 DEBUG_LOGGING = os.getenv('DEBUG_LOGGING', 'False').lower() in ('true', '1', 't')
 REDIS_URL = os.getenv('REDIS_URL', 'memory://') # Falls back to memory if Redis isn't set
 WHITELIST_IPS = os.getenv('WHITELIST_IPS', '127.0.0.1').split(',')
+WAIT_DEFAULT_TIMEOUT_MS = int(os.getenv('WAIT_DEFAULT_TIMEOUT_MS', 30000))
+WAIT_MAX_TIMEOUT_MS = int(os.getenv('WAIT_MAX_TIMEOUT_MS', 120000))
 
 # --- THRIFT SETUP ---
 sys.path.append('gen-py')
@@ -67,11 +69,11 @@ def log(msg, is_error=False):
         prefix = "[ERROR]" if is_error else "[INFO]"
         print(f"{prefix} [{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
-def get_node_client():
+def get_node_client(timeout_ms=10000):
     transport = None
     try:
         socket = TSocket.TSocket(NODE_IP, NODE_PORT)
-        socket.setTimeout(10000)
+        socket.setTimeout(int(timeout_ms))
         transport = TTransport.TBufferedTransport(socket)
         protocol = TBinaryProtocol.TBinaryProtocol(transport)
         client = API.Client(protocol)
@@ -81,6 +83,17 @@ def get_node_client():
         log(f"Thrift Connection Error: {e}", is_error=True)
         if transport: transport.close()
         return None, None
+
+
+def _resolve_wait_timeout(data):
+    """Pick a timeout in ms from the request body, clamped to the configured max."""
+    try:
+        ms = int(get_json_val(data, ['timeoutMs', 'TimeoutMs'], WAIT_DEFAULT_TIMEOUT_MS))
+    except (TypeError, ValueError):
+        ms = WAIT_DEFAULT_TIMEOUT_MS
+    if ms <= 0:
+        ms = WAIT_DEFAULT_TIMEOUT_MS
+    return min(ms, WAIT_MAX_TIMEOUT_MS)
 
 def get_json_val(data, keys, default=None):
     if not data: return default
@@ -667,6 +680,91 @@ def execute():
     except Exception as e:
         log(f"Transaction Execute Error: {e}", is_error=True)
         return jsonify({"success": False, "message": "Failed to execute transaction"}), 400
+    finally:
+        if transport and transport.isOpen(): transport.close()
+
+
+# --- WAIT HELPERS / LONG-POLL ---
+from services import monitor as _monitor
+
+
+@app.route('/Monitor/WaitForBlock', methods=['POST'])
+@app.route('/api/Monitor/WaitForBlock', methods=['POST'])
+@limiter.limit("2 per second; 60 per minute")
+def wait_for_block():
+    data = request.json or {}
+    try:
+        pool_number = int(get_json_val(data, ['poolNumber', 'PoolNumber'], 0))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "Invalid poolNumber"}), 400
+
+    timeout_ms = _resolve_wait_timeout(data)
+    # Add headroom so the socket waits slightly longer than the node-side block.
+    client, transport = get_node_client(timeout_ms=timeout_ms + 5000)
+    if not client:
+        return jsonify({"success": False, "message": "Node Unavailable"}), 503
+
+    try:
+        res = client.WaitForBlock(pool_number)
+        return jsonify(_monitor.map_block_response(res, pool_number))
+    except Exception as e:
+        log(f"WaitForBlock Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": "WaitForBlock failed"}), 504
+    finally:
+        if transport and transport.isOpen(): transport.close()
+
+
+@app.route('/Monitor/WaitForSmartTransaction', methods=['POST'])
+@app.route('/api/Monitor/WaitForSmartTransaction', methods=['POST'])
+@limiter.limit("2 per second; 60 per minute")
+def wait_for_smart_transaction():
+    data = request.json or {}
+    pub = get_json_val(data, ['publicKey', 'PublicKey', 'smartContract', 'SmartContract'], '')
+    if not pub:
+        return jsonify({"success": False, "message": "Missing publicKey"}), 400
+    try:
+        pk_bytes = base58.b58decode(pub)
+    except Exception:
+        return jsonify({"success": False, "message": "publicKey is not valid base58"}), 400
+
+    timeout_ms = _resolve_wait_timeout(data)
+    client, transport = get_node_client(timeout_ms=timeout_ms + 5000)
+    if not client:
+        return jsonify({"success": False, "message": "Node Unavailable"}), 503
+
+    try:
+        res = client.WaitForSmartTransaction(pk_bytes)
+        return jsonify(_monitor.map_smart_tx_response(res))
+    except Exception as e:
+        log(f"WaitForSmartTransaction Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": "WaitForSmartTransaction failed"}), 504
+    finally:
+        if transport and transport.isOpen(): transport.close()
+
+
+@app.route('/Transaction/Result', methods=['POST'])
+@app.route('/api/Transaction/Result', methods=['POST'])
+@limiter.limit("5 per second; 100 per minute")
+def transaction_result():
+    data = request.json or {}
+    tx_id_str = get_json_val(data, ['transactionId', 'TransactionId'], '')
+    if not tx_id_str or '.' not in tx_id_str:
+        return jsonify({"success": False, "message": "Invalid Transaction ID format"}), 400
+
+    client, transport = get_node_client()
+    if not client:
+        return jsonify({"success": False, "message": "Node Unavailable"}), 503
+
+    try:
+        pool_seq_str, index_str = tx_id_str.split('.')
+        tx_id_obj = api_types.TransactionId()
+        tx_id_obj.poolSeq = int(pool_seq_str)
+        tx_id_obj.index = int(index_str) - 1
+        res = client.TransactionResultGet(tx_id_obj)
+        return jsonify(_monitor.map_tx_result(res))
+    except Exception as e:
+        log(f"TransactionResultGet Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": "TransactionResultGet failed"}), 400
     finally:
         if transport and transport.isOpen(): transport.close()
 

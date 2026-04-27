@@ -10,6 +10,10 @@ from pathlib import Path
 GATEWAY = Path(__file__).resolve().parent.parent / "gateway.py"
 
 EXPECTED_ROUTES = {
+    # Section 3 - wait helpers / long-poll
+    "/Monitor/WaitForBlock",
+    "/Monitor/WaitForSmartTransaction",
+    "/Transaction/Result",
     # Section 4 - userFields v1
     "/UserFields/Encode",
     "/UserFields/Decode",
