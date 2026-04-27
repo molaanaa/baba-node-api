@@ -684,6 +684,138 @@ def execute():
         if transport and transport.isOpen(): transport.close()
 
 
+# --- TOKEN API ---
+from services import tokens as _tokens
+
+
+def _decode_token_address(value):
+    if not value:
+        return None, ("Missing token address", 400)
+    try:
+        return base58.b58decode(value), None
+    except Exception:
+        return None, ("token is not valid base58", 400)
+
+
+@app.route('/Tokens/BalancesGet', methods=['POST'])
+@app.route('/api/Tokens/BalancesGet', methods=['POST'])
+@limiter.limit("10 per second; 200 per minute")
+def tokens_balances_get():
+    data = request.json or {}
+    pub = get_json_val(data, ['publicKey', 'PublicKey'], '')
+    if not pub:
+        return jsonify({"success": False, "message": "Missing publicKey"}), 400
+    try:
+        pk_bytes = base58.b58decode(pub)
+    except Exception:
+        return jsonify({"success": False, "message": "publicKey is not valid base58"}), 400
+
+    client, transport = get_node_client()
+    if not client:
+        return jsonify({"success": False, "message": "Node Unavailable"}), 503
+    try:
+        return jsonify(_tokens.map_balances(client.TokenBalancesGet(pk_bytes)))
+    except Exception as e:
+        log(f"TokenBalancesGet Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": "TokenBalancesGet failed"}), 400
+    finally:
+        if transport and transport.isOpen(): transport.close()
+
+
+@app.route('/Tokens/TransfersGet', methods=['POST'])
+@app.route('/api/Tokens/TransfersGet', methods=['POST'])
+@limiter.limit("5 per second; 100 per minute")
+def tokens_transfers_get():
+    data = request.json or {}
+    token_b, err = _decode_token_address(get_json_val(data, ['token', 'Token'], ''))
+    if err: return jsonify({"success": False, "message": err[0]}), err[1]
+    offset = int(get_json_val(data, ['offset', 'Offset'], 0) or 0)
+    limit = int(get_json_val(data, ['limit', 'Limit'], 50) or 50)
+
+    client, transport = get_node_client()
+    if not client:
+        return jsonify({"success": False, "message": "Node Unavailable"}), 503
+    try:
+        return jsonify(_tokens.map_transfers(client.TokenTransfersGet(token_b, offset, limit)))
+    except Exception as e:
+        log(f"TokenTransfersGet Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": "TokenTransfersGet failed"}), 400
+    finally:
+        if transport and transport.isOpen(): transport.close()
+
+
+@app.route('/Tokens/Info', methods=['POST'])
+@app.route('/api/Tokens/Info', methods=['POST'])
+@limiter.limit("10 per second; 200 per minute")
+def tokens_info():
+    data = request.json or {}
+    token_b, err = _decode_token_address(get_json_val(data, ['token', 'Token'], ''))
+    if err: return jsonify({"success": False, "message": err[0]}), err[1]
+
+    client, transport = get_node_client()
+    if not client:
+        return jsonify({"success": False, "message": "Node Unavailable"}), 503
+    try:
+        return jsonify(_tokens.map_info(client.TokenInfoGet(token_b)))
+    except Exception as e:
+        log(f"TokenInfoGet Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": "TokenInfoGet failed"}), 400
+    finally:
+        if transport and transport.isOpen(): transport.close()
+
+
+@app.route('/Tokens/HoldersGet', methods=['POST'])
+@app.route('/api/Tokens/HoldersGet', methods=['POST'])
+@limiter.limit("5 per second; 100 per minute")
+def tokens_holders_get():
+    data = request.json or {}
+    token_b, err = _decode_token_address(get_json_val(data, ['token', 'Token'], ''))
+    if err: return jsonify({"success": False, "message": err[0]}), err[1]
+    offset = int(get_json_val(data, ['offset', 'Offset'], 0) or 0)
+    limit = int(get_json_val(data, ['limit', 'Limit'], 50) or 50)
+    order = int(get_json_val(data, ['order', 'Order'], 0) or 0)
+    desc = bool(get_json_val(data, ['desc', 'Desc'], True))
+
+    client, transport = get_node_client()
+    if not client:
+        return jsonify({"success": False, "message": "Node Unavailable"}), 503
+    try:
+        # Some node versions expose (token, offset, limit, order, desc); fall back
+        # to the trailing-arg variant if signature differs.
+        try:
+            res = client.TokenHoldersGet(token_b, offset, limit, order, desc)
+        except TypeError:
+            res = client.TokenHoldersGet(token_b, offset, limit, order)
+        return jsonify(_tokens.map_holders(res))
+    except Exception as e:
+        log(f"TokenHoldersGet Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": "TokenHoldersGet failed"}), 400
+    finally:
+        if transport and transport.isOpen(): transport.close()
+
+
+@app.route('/Tokens/TransactionsGet', methods=['POST'])
+@app.route('/api/Tokens/TransactionsGet', methods=['POST'])
+@limiter.limit("5 per second; 100 per minute")
+def tokens_transactions_get():
+    data = request.json or {}
+    token_b, err = _decode_token_address(get_json_val(data, ['token', 'Token'], ''))
+    if err: return jsonify({"success": False, "message": err[0]}), err[1]
+    offset = int(get_json_val(data, ['offset', 'Offset'], 0) or 0)
+    limit = int(get_json_val(data, ['limit', 'Limit'], 50) or 50)
+
+    client, transport = get_node_client()
+    if not client:
+        return jsonify({"success": False, "message": "Node Unavailable"}), 503
+    try:
+        return jsonify(_tokens.map_token_transactions(client.TokenTransactionsGet(token_b, offset, limit)))
+    except Exception as e:
+        log(f"TokenTransactionsGet Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": "TokenTransactionsGet failed"}), 400
+    finally:
+        if transport and transport.isOpen(): transport.close()
+
+
 # --- WAIT HELPERS / LONG-POLL ---
 from services import monitor as _monitor
 

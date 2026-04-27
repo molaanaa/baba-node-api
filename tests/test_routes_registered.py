@@ -10,6 +10,12 @@ from pathlib import Path
 GATEWAY = Path(__file__).resolve().parent.parent / "gateway.py"
 
 EXPECTED_ROUTES = {
+    # Section 2 - Token API
+    "/Tokens/BalancesGet",
+    "/Tokens/TransfersGet",
+    "/Tokens/Info",
+    "/Tokens/HoldersGet",
+    "/Tokens/TransactionsGet",
     # Section 3 - wait helpers / long-poll
     "/Monitor/WaitForBlock",
     "/Monitor/WaitForSmartTransaction",
