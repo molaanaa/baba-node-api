@@ -12,14 +12,14 @@ Stato attuale del branch `claude/baba-node-api-extensions-DYS0c`:
 - Tutti gli endpoint REST corrispondenti sono registrati in `gateway.py`
   con doppia route `/<path>` e `/api/<path>` e rate-limit allineato
   allo stile esistente.
-- `.env.example` punta `NODE_IP=38.242.234.47` (nodo gestito).
+- `.env.example` punta `NODE_IP=127.0.0.1` (nodo locale).
 - README.md aggiornato con tabelle, schema `userFields v1` ed esempi `curl`.
 
 Quanto resta da fare richiede uno o più dei seguenti:
 
 - shell con `gevent`, `thrift`, `redis` installabili (compilazione C richiesta);
 - `gen-py/` generato da `CREDITSCOM/thrift-interface-definitions`;
-- accesso a un nodo Credits di testnet/mainnet (es. `38.242.234.47:9090`);
+- accesso a un nodo Credits di testnet/mainnet;
 - permessi GitHub per fork + PR su `molaanaa/baba-node-api` (lo scope MCP
   di questa sessione è limitato a `EnzinoBB/baba-node-api`).
 
@@ -168,7 +168,7 @@ sono utilizzabili da un client che non incorpora il SDK ufficiale Credits.
 
 ---
 
-## B. Verifiche end-to-end contro il nodo gestito (38.242.234.47:9090)
+## B. Verifiche end-to-end contro il nodo Credits
 
 Tutti i nuovi endpoint devono essere validati con un nodo reale o con un
 mock Thrift completo. Sequenza minima di smoke test (Step 8 del piano):

@@ -16,7 +16,7 @@ def test_map_active_nodes_success():
         status=OK,
         count=2,
         nodes=[
-            NS(key=KEY, version="5.0.1", ip="38.242.234.47", lastBlock=1234, trustLevel=3),
+            NS(key=KEY, version="5.0.1", ip="192.0.2.10", lastBlock=1234, trustLevel=3),
             NS(publicKey=KEY, version="5.0.0", ip="10.0.0.2", round=1233, trustLevel=2),
         ],
     )
@@ -24,7 +24,7 @@ def test_map_active_nodes_success():
     assert out["success"] is True
     assert out["count"] == 2
     assert out["nodes"][0]["key"] == KEY_B58
-    assert out["nodes"][0]["ip"] == "38.242.234.47"
+    assert out["nodes"][0]["ip"] == "192.0.2.10"
     assert out["nodes"][1]["lastBlock"] == 1233
 
 
@@ -49,7 +49,7 @@ def test_map_node_info():
     info = NS(
         version="5.0.1",
         publicKey=KEY,
-        ip="38.242.234.47",
+        ip="192.0.2.10",
         lastBlock=99999,
         uptimeSeconds=12345,
         trustLevel=4,
@@ -57,7 +57,7 @@ def test_map_node_info():
     out = diag.map_node_info(NS(status=OK, info=info))
     assert out["success"] is True
     assert out["info"]["publicKey"] == KEY_B58
-    assert out["info"]["ip"] == "38.242.234.47"
+    assert out["info"]["ip"] == "192.0.2.10"
     assert out["info"]["uptimeSeconds"] == 12345
 
 

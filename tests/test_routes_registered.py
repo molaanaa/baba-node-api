@@ -68,6 +68,6 @@ def test_userfields_routes_registered_dual():
         assert f"/api{r}" in routes, f"missing /api-prefixed route /api{r}"
 
 
-def test_node_ip_default_points_to_managed_node():
+def test_node_ip_default_in_env_example():
     env_example = (Path(GATEWAY).parent / ".env.example").read_text()
-    assert "NODE_IP=38.242.234.47" in env_example
+    assert "NODE_IP=127.0.0.1" in env_example

@@ -296,10 +296,12 @@ require `gen-py` and a reachable Credits node; see
 
 ---
 
-## 🌐 Managed Credits node
+## 🌐 Credits node configuration
 
-The default `.env.example` points `NODE_IP` at the operator's managed node
-**38.242.234.47** (Thrift port 9090). Override per environment.
+`.env.example` defaults to a local node on `127.0.0.1:9090`. Override
+`NODE_IP` / `NODE_PORT` per environment, and set `NODE_DIAG_PORT` if
+the node exposes API_DIAG on a port distinct from the main API
+(commonly `9088` on standard builds).
 
 ---
 
