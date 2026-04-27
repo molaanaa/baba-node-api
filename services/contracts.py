@@ -55,9 +55,19 @@ def _b64_to_bytes(name: str, value) -> bytes:
 
 
 def _status(obj: Any) -> dict:
+    """Extract a normalised {code,message} from a node response.
+
+    Most result structs nest an APIResponse under ``status``, but a few
+    (notably ``ContractAllMethodsGetResult``) inline ``code`` and ``message``
+    on the result struct itself. Accept both shapes.
+    """
     status = getattr(obj, "status", None)
-    code = getattr(status, "code", 0) if status else 0
-    message = getattr(status, "message", "") if status else ""
+    if status is not None:
+        code = getattr(status, "code", 0)
+        message = getattr(status, "message", "")
+    else:
+        code = getattr(obj, "code", 0)
+        message = getattr(obj, "message", "")
     return {"code": int(code or 0), "message": message or ""}
 
 
@@ -110,22 +120,42 @@ def build_smart_invocation(
     params: Iterable[dict] = (),
     forget_new_state: bool = False,
 ):
-    """Shape a SmartContractInvocation. Only attributes the local class exposes
-    are set, so this works against both the real Thrift class and lightweight
-    test stubs.
+    """Shape a SmartContractInvocation.
+
+    In the real Thrift schema, ``sourceCode`` and ``byteCodeObjects`` live on
+    the nested ``SmartContractDeploy`` struct (field ``smartContractDeploy``
+    of ``SmartContractInvocation``); this builder routes Deploy-only fields
+    there. ``method/params/forgetNewState`` stay on the invocation itself.
+    A flat-stub fallback is kept so unit tests with simplified namespaces
+    keep working.
     """
     SCInvClass = getattr(types_ns, "SmartContractInvocation")
     sc = SCInvClass()
-    if hasattr(sc, "sourceCode"):
-        sc.sourceCode = source_code or ""
-    if hasattr(sc, "byteCodeObjects"):
-        sc.byteCodeObjects = build_byte_code_objects(types_ns, byte_code_objects)
     if hasattr(sc, "method"):
         sc.method = method or ""
     if hasattr(sc, "params"):
         sc.params = list(params or [])
     if hasattr(sc, "forgetNewState"):
         sc.forgetNewState = bool(forget_new_state)
+
+    has_deploy_payload = bool(source_code) or bool(list(byte_code_objects or []))
+    if not has_deploy_payload:
+        return sc
+
+    SCDeployClass = getattr(types_ns, "SmartContractDeploy", None)
+    if SCDeployClass is not None and hasattr(sc, "smartContractDeploy"):
+        deploy = SCDeployClass()
+        if hasattr(deploy, "sourceCode"):
+            deploy.sourceCode = source_code or ""
+        if hasattr(deploy, "byteCodeObjects"):
+            deploy.byteCodeObjects = build_byte_code_objects(types_ns, byte_code_objects)
+        sc.smartContractDeploy = deploy
+    else:
+        # Flat fallback for legacy / stub schemas without SmartContractDeploy.
+        if hasattr(sc, "sourceCode"):
+            sc.sourceCode = source_code or ""
+        if hasattr(sc, "byteCodeObjects"):
+            sc.byteCodeObjects = build_byte_code_objects(types_ns, byte_code_objects)
     return sc
 
 
@@ -220,13 +250,26 @@ def map_compile_result(res: Any) -> dict:
 def map_smart_contract(sc: Any) -> Optional[dict]:
     if sc is None:
         return None
-    bcos = getattr(sc, "byteCodeObjects", None) or []
+    # Real Thrift SmartContract nests sourceCode/byteCodeObjects in
+    # `smartContractDeploy` (SmartContractDeploy struct). Test fixtures using
+    # SimpleNamespace tend to flatten them on `sc` directly — accept both.
+    deploy = getattr(sc, "smartContractDeploy", None)
+    src_code = getattr(sc, "sourceCode", None)
+    bcos = getattr(sc, "byteCodeObjects", None)
+    if deploy is not None:
+        if src_code is None:
+            src_code = getattr(deploy, "sourceCode", None)
+        if not bcos:
+            bcos = getattr(deploy, "byteCodeObjects", None)
+    bcos = bcos or []
     return {
         "address": _b58(getattr(sc, "address", b"")),
         "deployer": _b58(getattr(sc, "deployer", b"")),
-        "sourceCode": getattr(sc, "sourceCode", None),
+        "sourceCode": src_code,
         "byteCodeObjects": [map_byte_code_object(b) for b in bcos],
         "transactionId": _format_tx_id(getattr(sc, "transactionId", None)),
+        "createTime": getattr(sc, "createTime", None),
+        "transactionsCount": getattr(sc, "transactionsCount", None),
     }
 
 

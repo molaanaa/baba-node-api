@@ -3,6 +3,8 @@ both ``/<path>`` and ``/api/<path>``. Importing gateway.py is avoided here
 because gevent/thrift/redis are runtime-only dependencies.
 """
 
+from __future__ import annotations
+
 import ast
 import os
 from pathlib import Path

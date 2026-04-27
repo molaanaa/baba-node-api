@@ -23,6 +23,10 @@ load_dotenv()
 
 NODE_IP = os.getenv('NODE_IP', '127.0.0.1')
 NODE_PORT = int(os.getenv('NODE_PORT', 9090))
+# API_DIAG (apidiag.thrift) is normally exposed on a port distinct from the
+# main API. Defaults to NODE_PORT so single-port test setups still work; set
+# NODE_DIAG_PORT explicitly when the node binds API_DIAG elsewhere.
+NODE_DIAG_PORT = int(os.getenv('NODE_DIAG_PORT', NODE_PORT))
 DEBUG_LOGGING = os.getenv('DEBUG_LOGGING', 'False').lower() in ('true', '1', 't')
 REDIS_URL = os.getenv('REDIS_URL', 'memory://') # Falls back to memory if Redis isn't set
 WHITELIST_IPS = os.getenv('WHITELIST_IPS', '127.0.0.1').split(',')
@@ -40,6 +44,17 @@ import api.ttypes as api_types
 Transaction = api_types.Transaction
 Amount = general_types.Amount
 AmountCommission = api_types.AmountCommission
+
+# Combined Thrift namespace used by services/contracts.py builders, which need
+# both api.ttypes (Transaction, AmountCommission, SmartContractInvocation,
+# SmartContractDeploy) and general.ttypes (Amount, ByteCodeObject) without
+# caring which IDL file they come from. api.* takes precedence on collisions.
+import types as _py_types
+_thrift_ns = _py_types.SimpleNamespace()
+for _src in (general_types, api_types):
+    for _n in dir(_src):
+        if not _n.startswith('_'):
+            setattr(_thrift_ns, _n, getattr(_src, _n))
 
 getcontext().prec = 30
 
@@ -691,10 +706,11 @@ from services import diag as _diag
 def get_diag_client(timeout_ms=10000):
     """Open a Thrift client against the node's API_DIAG service.
 
-    The diagnostic service is exposed on the same port as the main API but
-    uses a separate Thrift interface (``apidiag.thrift``). If the generated
-    module is missing (e.g. operator forgot to compile apidiag.thrift), this
-    returns ``(None, None)`` so the endpoint can answer 503 cleanly.
+    The diagnostic service uses a separate Thrift interface (``apidiag.thrift``)
+    and on most node builds is exposed on a dedicated port — set NODE_DIAG_PORT
+    accordingly. If the generated module is missing (operator forgot to compile
+    apidiag.thrift) this returns ``(None, None)`` so the endpoint can answer
+    503 cleanly.
     """
     try:
         from apidiag import API_DIAG  # type: ignore
@@ -703,7 +719,7 @@ def get_diag_client(timeout_ms=10000):
         return None, None
     transport = None
     try:
-        socket = TSocket.TSocket(NODE_IP, NODE_PORT)
+        socket = TSocket.TSocket(NODE_IP, NODE_DIAG_PORT)
         socket.setTimeout(int(timeout_ms))
         transport = TTransport.TBufferedTransport(socket)
         protocol = TBinaryProtocol.TBinaryProtocol(transport)
@@ -716,13 +732,13 @@ def get_diag_client(timeout_ms=10000):
         return None, None
 
 
-def _diag_call(method_name, mapper, error_label):
+def _diag_call(method_name, mapper, error_label, *args):
     client, transport = get_diag_client()
     if not client:
         return jsonify({"success": False, "message": "Diag service Unavailable"}), 503
     try:
         method = getattr(client, method_name)
-        return jsonify(mapper(method()))
+        return jsonify(mapper(method(*args)))
     except Exception as e:
         log(f"{error_label} Error: {e}", is_error=True)
         return jsonify({"success": False, "message": f"{error_label} failed"}), 400
@@ -748,7 +764,14 @@ def diag_get_active_tx_count():
 @app.route('/api/Diag/GetNodeInfo', methods=['POST'])
 @limiter.limit("5 per second; 100 per minute")
 def diag_get_node_info():
-    return _diag_call('GetNodeInfo', _diag.map_node_info, 'GetNodeInfo')
+    # GetNodeInfo expects a NodeInfoRequest struct (all fields optional).
+    try:
+        from apidiag.ttypes import NodeInfoRequest  # type: ignore
+        req = NodeInfoRequest()
+    except Exception as e:
+        log(f"NodeInfoRequest stub unavailable: {e}", is_error=True)
+        return jsonify({"success": False, "message": "Diag service Unavailable"}), 503
+    return _diag_call('GetNodeInfo', _diag.map_node_info, 'GetNodeInfo', req)
 
 
 @app.route('/Diag/GetSupply', methods=['POST'])
@@ -780,7 +803,9 @@ def smart_contract_compile():
     if not source:
         return jsonify({"success": False, "message": "Missing sourceCode"}), 400
 
-    client, transport = get_node_client(timeout_ms=30000)
+    # Compile dispatches to the executor service via the node and may take
+    # tens of seconds for non-trivial sources; bump the socket timeout.
+    client, transport = get_node_client(timeout_ms=120000)
     if not client:
         return jsonify({"success": False, "message": "Node Unavailable"}), 503
     try:
@@ -816,29 +841,46 @@ def smart_contract_get():
 @app.route('/api/SmartContract/Methods', methods=['POST'])
 @limiter.limit("5 per second; 100 per minute")
 def smart_contract_methods():
+    """List the methods of a smart contract.
+
+    Accepts either:
+      * ``address``: base58 address of an already-deployed contract
+        (calls ``ContractMethodsGet``); or
+      * ``byteCodeObjects``: list of {name, byteCode(base64)} (calls
+        ``ContractAllMethodsGet``) — useful right after a Compile and
+        before a Deploy.
+    """
     data = request.json or {}
+    addr_raw = get_json_val(data, ['address', 'Address'], '')
     bcos_raw = get_json_val(data, ['byteCodeObjects', 'ByteCodeObjects'], None)
-    if not bcos_raw:
-        return jsonify({"success": False, "message": "Missing byteCodeObjects"}), 400
-    try:
-        bcos = _contracts.build_byte_code_objects(api_types, bcos_raw)
-    except (ValueError, AttributeError) as e:
-        return jsonify({"success": False, "message": str(e)}), 400
+    if not addr_raw and not bcos_raw:
+        return jsonify({"success": False, "message": "Provide either 'address' or 'byteCodeObjects'"}), 400
+
+    addr_b = None
+    bcos = None
+    if addr_raw:
+        addr_b, err = _decode_address(addr_raw, 'address')
+        if err: return jsonify({"success": False, "message": err[0]}), err[1]
+    else:
+        try:
+            bcos = _contracts.build_byte_code_objects(_thrift_ns, bcos_raw)
+        except (ValueError, AttributeError) as e:
+            return jsonify({"success": False, "message": str(e)}), 400
 
     client, transport = get_node_client(timeout_ms=20000)
     if not client:
         return jsonify({"success": False, "message": "Node Unavailable"}), 503
     try:
-        # Method name in the published Thrift API; falls back to executor-style
-        # naming if a future node version renames it.
-        if hasattr(client, 'SmartContractMethodsGet'):
-            res = client.SmartContractMethodsGet(bcos)
+        if addr_b is not None:
+            # IDL: ContractMethodsGet(general.Address address)
+            res = client.ContractMethodsGet(addr_b)
         else:
-            res = client.getContractMethods(bcos)
+            # IDL: ContractAllMethodsGet(list<general.ByteCodeObject> byteCodeObjects)
+            res = client.ContractAllMethodsGet(bcos)
         return jsonify(_contracts.map_methods(res))
     except Exception as e:
-        log(f"SmartContractMethodsGet Error: {e}", is_error=True)
-        return jsonify({"success": False, "message": "SmartContractMethodsGet failed"}), 400
+        log(f"ContractMethodsGet Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": "ContractMethodsGet failed"}), 400
     finally:
         if transport and transport.isOpen(): transport.close()
 
@@ -871,12 +913,19 @@ def smart_contract_list_by_wallet():
     data = request.json or {}
     addr_b, err = _decode_address(get_json_val(data, ['publicKey', 'PublicKey']), 'publicKey')
     if err: return jsonify({"success": False, "message": err[0]}), err[1]
+    try:
+        offset = int(get_json_val(data, ['offset', 'Offset'], 0))
+        limit = int(get_json_val(data, ['limit', 'Limit'], 50))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "offset/limit must be integers"}), 400
 
     client, transport = get_node_client()
     if not client:
         return jsonify({"success": False, "message": "Node Unavailable"}), 503
     try:
-        return jsonify(_contracts.map_list_by_wallet(client.SmartContractsListGet(addr_b)))
+        # IDL: SmartContractsListGet(deployer, i64 offset, i64 limit)
+        res = client.SmartContractsListGet(addr_b, offset, limit)
+        return jsonify(_contracts.map_list_by_wallet(res))
     except Exception as e:
         log(f"SmartContractsListGet Error: {e}", is_error=True)
         return jsonify({"success": False, "message": "SmartContractsListGet failed"}), 400
@@ -984,7 +1033,7 @@ def smart_contract_deploy():
 
     try:
         tx = _contracts.build_deploy_transaction(
-            api_types,
+            _thrift_ns,
             deployer_bytes=sender_b,
             target_bytes=target_b,
             byte_code_objects=bcos_raw,
@@ -1041,7 +1090,7 @@ def smart_contract_execute():
 
     try:
         tx = _contracts.build_execute_transaction(
-            api_types,
+            _thrift_ns,
             sender_bytes=sender_b,
             contract_bytes=contract_b,
             method=method,
@@ -1202,11 +1251,22 @@ from services import monitor as _monitor
 @app.route('/api/Monitor/WaitForBlock', methods=['POST'])
 @limiter.limit("2 per second; 60 per minute")
 def wait_for_block():
+    """Long-poll for the next pool after ``obsoleteHash``.
+
+    The node-side Thrift signature is ``PoolHash WaitForBlock(PoolHash obsolete)``
+    where ``PoolHash`` is raw binary. Clients pass the last hash they have
+    seen (base58-encoded); if the field is missing or empty, we use the
+    current ``GetLastHash()`` so the call returns as soon as a new block
+    is sealed.
+    """
     data = request.json or {}
-    try:
-        pool_number = int(get_json_val(data, ['poolNumber', 'PoolNumber'], 0))
-    except (TypeError, ValueError):
-        return jsonify({"success": False, "message": "Invalid poolNumber"}), 400
+    obsolete_b58 = get_json_val(data, ['obsoleteHash', 'ObsoleteHash', 'hash', 'Hash'], '')
+    obsolete_bytes = b""
+    if obsolete_b58:
+        try:
+            obsolete_bytes = base58.b58decode(obsolete_b58)
+        except Exception:
+            return jsonify({"success": False, "message": "obsoleteHash is not valid base58"}), 400
 
     timeout_ms = _resolve_wait_timeout(data)
     # Add headroom so the socket waits slightly longer than the node-side block.
@@ -1215,8 +1275,15 @@ def wait_for_block():
         return jsonify({"success": False, "message": "Node Unavailable"}), 503
 
     try:
-        res = client.WaitForBlock(pool_number)
-        return jsonify(_monitor.map_block_response(res, pool_number))
+        if not obsolete_bytes:
+            # No baseline supplied: use the current last hash so we return as
+            # soon as the next block is sealed instead of immediately.
+            try:
+                obsolete_bytes = client.GetLastHash() or b""
+            except Exception:
+                obsolete_bytes = b""
+        res = client.WaitForBlock(obsolete_bytes)
+        return jsonify(_monitor.map_block_response(res, obsolete_bytes))
     except Exception as e:
         log(f"WaitForBlock Error: {e}", is_error=True)
         return jsonify({"success": False, "message": "WaitForBlock failed"}), 504

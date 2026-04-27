@@ -34,13 +34,17 @@ class StubTypes:
             self.name = None
             self.byteCode = b""
 
-    class SmartContractInvocation:
+    class SmartContractDeploy:
         def __init__(self):
             self.sourceCode = ""
             self.byteCodeObjects = []
+
+    class SmartContractInvocation:
+        def __init__(self):
             self.method = ""
             self.params = []
             self.forgetNewState = False
+            self.smartContractDeploy = None
 
     class Transaction:
         def __init__(self):
@@ -89,11 +93,16 @@ def test_build_deploy_transaction_shape():
     assert tx.userFields == b"\x00"
     assert tx.type == c.TT_SMART_DEPLOY
     assert tx.smartContract is not None
-    assert tx.smartContract.sourceCode == "class AccessRights {}"
-    assert len(tx.smartContract.byteCodeObjects) == 1
-    bco = tx.smartContract.byteCodeObjects[0]
+    deploy = tx.smartContract.smartContractDeploy
+    assert deploy is not None, "Deploy must populate the nested SmartContractDeploy"
+    assert deploy.sourceCode == "class AccessRights {}"
+    assert len(deploy.byteCodeObjects) == 1
+    bco = deploy.byteCodeObjects[0]
     assert bco.name == "AccessRights"
     assert bco.byteCode == bytecode  # decoded from base64
+    # Execute-only fields stay empty on a Deploy invocation.
+    assert tx.smartContract.method == ""
+    assert tx.smartContract.params == []
 
 
 def test_build_execute_transaction_shape():
@@ -114,6 +123,8 @@ def test_build_execute_transaction_shape():
     assert tx.smartContract.method == "transfer"
     assert len(tx.smartContract.params) == 2
     assert tx.fee.commission == 999
+    # Execute must NOT carry a Deploy payload.
+    assert tx.smartContract.smartContractDeploy is None
 
 
 def test_build_execute_requires_method():

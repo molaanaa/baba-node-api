@@ -1,0 +1,3 @@
+[submodule "thrift/interface"]
+	path = thrift/interface
+	url = https://github.com/CREDITSCOM/thrift-interface-definitions
