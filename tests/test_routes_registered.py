@@ -10,6 +10,11 @@ from pathlib import Path
 GATEWAY = Path(__file__).resolve().parent.parent / "gateway.py"
 
 EXPECTED_ROUTES = {
+    # Section 6 - Diagnostic API (optional)
+    "/Diag/GetActiveNodes",
+    "/Diag/GetActiveTransactionsCount",
+    "/Diag/GetNodeInfo",
+    "/Diag/GetSupply",
     # Section 1 - Smart Contract API
     "/SmartContract/Compile",
     "/SmartContract/Deploy",

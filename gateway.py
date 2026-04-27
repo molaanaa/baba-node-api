@@ -684,6 +684,80 @@ def execute():
         if transport and transport.isOpen(): transport.close()
 
 
+# --- DIAGNOSTIC API (API_DIAG service) ---
+from services import diag as _diag
+
+
+def get_diag_client(timeout_ms=10000):
+    """Open a Thrift client against the node's API_DIAG service.
+
+    The diagnostic service is exposed on the same port as the main API but
+    uses a separate Thrift interface (``apidiag.thrift``). If the generated
+    module is missing (e.g. operator forgot to compile apidiag.thrift), this
+    returns ``(None, None)`` so the endpoint can answer 503 cleanly.
+    """
+    try:
+        from apidiag import API_DIAG  # type: ignore
+    except Exception as e:
+        log(f"apidiag stubs unavailable: {e}", is_error=True)
+        return None, None
+    transport = None
+    try:
+        socket = TSocket.TSocket(NODE_IP, NODE_PORT)
+        socket.setTimeout(int(timeout_ms))
+        transport = TTransport.TBufferedTransport(socket)
+        protocol = TBinaryProtocol.TBinaryProtocol(transport)
+        client = API_DIAG.Client(protocol)
+        transport.open()
+        return client, transport
+    except Exception as e:
+        log(f"Diag Thrift Connection Error: {e}", is_error=True)
+        if transport: transport.close()
+        return None, None
+
+
+def _diag_call(method_name, mapper, error_label):
+    client, transport = get_diag_client()
+    if not client:
+        return jsonify({"success": False, "message": "Diag service Unavailable"}), 503
+    try:
+        method = getattr(client, method_name)
+        return jsonify(mapper(method()))
+    except Exception as e:
+        log(f"{error_label} Error: {e}", is_error=True)
+        return jsonify({"success": False, "message": f"{error_label} failed"}), 400
+    finally:
+        if transport and transport.isOpen(): transport.close()
+
+
+@app.route('/Diag/GetActiveNodes', methods=['POST'])
+@app.route('/api/Diag/GetActiveNodes', methods=['POST'])
+@limiter.limit("5 per second; 100 per minute")
+def diag_get_active_nodes():
+    return _diag_call('GetActiveNodes', _diag.map_active_nodes, 'GetActiveNodes')
+
+
+@app.route('/Diag/GetActiveTransactionsCount', methods=['POST'])
+@app.route('/api/Diag/GetActiveTransactionsCount', methods=['POST'])
+@limiter.limit("5 per second; 100 per minute")
+def diag_get_active_tx_count():
+    return _diag_call('GetActiveTransactionsCount', _diag.map_active_transactions_count, 'GetActiveTransactionsCount')
+
+
+@app.route('/Diag/GetNodeInfo', methods=['POST'])
+@app.route('/api/Diag/GetNodeInfo', methods=['POST'])
+@limiter.limit("5 per second; 100 per minute")
+def diag_get_node_info():
+    return _diag_call('GetNodeInfo', _diag.map_node_info, 'GetNodeInfo')
+
+
+@app.route('/Diag/GetSupply', methods=['POST'])
+@app.route('/api/Diag/GetSupply', methods=['POST'])
+@limiter.limit("5 per second; 100 per minute")
+def diag_get_supply():
+    return _diag_call('GetSupply', _diag.map_supply, 'GetSupply')
+
+
 # --- SMART CONTRACT API ---
 from services import contracts as _contracts
 
