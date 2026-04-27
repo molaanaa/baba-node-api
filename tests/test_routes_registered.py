@@ -10,6 +10,14 @@ from pathlib import Path
 GATEWAY = Path(__file__).resolve().parent.parent / "gateway.py"
 
 EXPECTED_ROUTES = {
+    # Section 1 - Smart Contract API
+    "/SmartContract/Compile",
+    "/SmartContract/Deploy",
+    "/SmartContract/Execute",
+    "/SmartContract/Get",
+    "/SmartContract/Methods",
+    "/SmartContract/State",
+    "/SmartContract/ListByWallet",
     # Section 2 - Token API
     "/Tokens/BalancesGet",
     "/Tokens/TransfersGet",
