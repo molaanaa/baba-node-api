@@ -23,9 +23,15 @@ load_dotenv()
 
 NODE_IP = os.getenv('NODE_IP', '127.0.0.1')
 NODE_PORT = int(os.getenv('NODE_PORT', 9090))
+# API_DIAG (apidiag.thrift) is normally exposed on a port distinct from the
+# main API. Defaults to NODE_PORT so single-port test setups still work; set
+# NODE_DIAG_PORT explicitly when the node binds API_DIAG elsewhere.
+NODE_DIAG_PORT = int(os.getenv('NODE_DIAG_PORT', NODE_PORT))
 DEBUG_LOGGING = os.getenv('DEBUG_LOGGING', 'False').lower() in ('true', '1', 't')
 REDIS_URL = os.getenv('REDIS_URL', 'memory://') # Falls back to memory if Redis isn't set
 WHITELIST_IPS = os.getenv('WHITELIST_IPS', '127.0.0.1').split(',')
+WAIT_DEFAULT_TIMEOUT_MS = int(os.getenv('WAIT_DEFAULT_TIMEOUT_MS', 30000))
+WAIT_MAX_TIMEOUT_MS = int(os.getenv('WAIT_MAX_TIMEOUT_MS', 120000))
 
 # --- THRIFT SETUP ---
 sys.path.append('gen-py')
@@ -38,6 +44,17 @@ import api.ttypes as api_types
 Transaction = api_types.Transaction
 Amount = general_types.Amount
 AmountCommission = api_types.AmountCommission
+
+# Combined Thrift namespace used by services/contracts.py builders, which need
+# both api.ttypes (Transaction, AmountCommission, SmartContractInvocation,
+# SmartContractDeploy) and general.ttypes (Amount, ByteCodeObject) without
+# caring which IDL file they come from. api.* takes precedence on collisions.
+import types as _py_types
+_thrift_ns = _py_types.SimpleNamespace()
+for _src in (general_types, api_types):
+    for _n in dir(_src):
+        if not _n.startswith('_'):
+            setattr(_thrift_ns, _n, getattr(_src, _n))
 
 getcontext().prec = 30
 
@@ -67,11 +84,11 @@ def log(msg, is_error=False):
         prefix = "[ERROR]" if is_error else "[INFO]"
         print(f"{prefix} [{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
-def get_node_client():
+def get_node_client(timeout_ms=10000):
     transport = None
     try:
         socket = TSocket.TSocket(NODE_IP, NODE_PORT)
-        socket.setTimeout(10000)
+        socket.setTimeout(int(timeout_ms))
         transport = TTransport.TBufferedTransport(socket)
         protocol = TBinaryProtocol.TBinaryProtocol(transport)
         client = API.Client(protocol)
@@ -81,6 +98,17 @@ def get_node_client():
         log(f"Thrift Connection Error: {e}", is_error=True)
         if transport: transport.close()
         return None, None
+
+
+def _resolve_wait_timeout(data):
+    """Pick a timeout in ms from the request body, clamped to the configured max."""
+    try:
+        ms = int(get_json_val(data, ['timeoutMs', 'TimeoutMs'], WAIT_DEFAULT_TIMEOUT_MS))
+    except (TypeError, ValueError):
+        ms = WAIT_DEFAULT_TIMEOUT_MS
+    if ms <= 0:
+        ms = WAIT_DEFAULT_TIMEOUT_MS
+    return min(ms, WAIT_MAX_TIMEOUT_MS)
 
 def get_json_val(data, keys, default=None):
     if not data: return default
@@ -669,6 +697,48 @@ def execute():
         return jsonify({"success": False, "message": "Failed to execute transaction"}), 400
     finally:
         if transport and transport.isOpen(): transport.close()
+
+
+# --- BLUEPRINTS (extension routes) -------------------------------------------
+# UserFields v1 codec, Diag, Tokens, Wait helpers, and Smart Contract endpoints
+# live in routes/* so this file stays focused on the pre-existing Monitor and
+# Transaction handlers. Each module exposes a make_blueprint(...) factory so
+# dependencies (limiter, helpers, the Thrift client opener, the combined
+# Thrift namespace) are injected explicitly — no circular import.
+
+from routes.userfields import make_blueprint as _make_userfields_bp
+from routes.diag import make_blueprint as _make_diag_bp
+from routes.tokens import make_blueprint as _make_tokens_bp
+from routes.monitor_wait import make_blueprint as _make_monitor_wait_bp
+from routes.smartcontract import make_blueprint as _make_smartcontract_bp
+
+app.register_blueprint(_make_userfields_bp(
+    limiter=limiter, log=log, get_json_val=get_json_val,
+))
+app.register_blueprint(_make_diag_bp(
+    limiter=limiter, log=log,
+    node_ip=NODE_IP, node_diag_port=NODE_DIAG_PORT,
+    t_socket_factory=lambda ip, port: TSocket.TSocket(ip, port),
+    t_transport_factory=lambda s: TTransport.TBufferedTransport(s),
+    t_protocol_factory=lambda t: TBinaryProtocol.TBinaryProtocol(t),
+))
+app.register_blueprint(_make_tokens_bp(
+    limiter=limiter, log=log,
+    get_node_client=get_node_client, get_json_val=get_json_val,
+))
+app.register_blueprint(_make_monitor_wait_bp(
+    limiter=limiter, log=log,
+    get_node_client=get_node_client, get_json_val=get_json_val,
+    resolve_wait_timeout=_resolve_wait_timeout,
+    api_types=api_types,
+))
+app.register_blueprint(_make_smartcontract_bp(
+    limiter=limiter, log=log,
+    get_node_client=get_node_client, get_json_val=get_json_val,
+    safe_int=safe_int, fee_to_bits=fee_to_bits, bits_to_fee=bits_to_fee,
+    get_fee_multiplier=get_fee_multiplier, full_decimal=full_decimal,
+    thrift_ns=_thrift_ns,
+))
 
 
 if __name__ == '__main__':
