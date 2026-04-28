@@ -1,0 +1,18 @@
+{
+  "endpoint": "/api/Monitor/GetEstimatedFee",
+  "method": "POST",
+  "description": "Returns the recommended fee (in CS) for a transaction of the given userFields size, applying the same multiplier scheme the gateway uses internally.",
+  "request": {
+    "transactionSize": 0
+  },
+  "response_success": {
+    "success": true,
+    "message": "",
+    "fee": 0.008740234375000001
+  },
+  "response_error": {
+    "success": false,
+    "message": "Failed to estimate fee"
+  },
+  "notes": "transactionSize is the length in bytes of the transaction's userData field. 0 = baseline transfer. Smart contract Deploy/Execute typically need 0.05–0.5 CS depending on bytecode size; pass the cumulative byte count of byteCodeObjects."
+}

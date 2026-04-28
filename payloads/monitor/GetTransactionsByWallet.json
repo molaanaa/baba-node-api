@@ -1,0 +1,45 @@
+{
+  "endpoint": "/api/Monitor/GetTransactionsByWallet",
+  "method": "POST",
+  "description": "Paged transaction history for a wallet. Returns the most recent first.",
+  "request": {
+    "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+    "offset": 0,
+    "limit": 10
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "listTransactionInfo": [
+      {
+        "transactionInnerId": 200,
+        "transactionId": "174621645.1",
+        "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+        "receiverPublicKey": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3",
+        "amount": "0.0",
+        "currency": 1,
+        "actualFee": "0.018",
+        "timeCreation": 1777375255320,
+        "isSmart": true,
+        "method": "getCounter"
+      },
+      {
+        "transactionInnerId": 199,
+        "transactionId": "174621620.1",
+        "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+        "receiverPublicKey": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3",
+        "amount": "0.0",
+        "currency": 1,
+        "actualFee": "0.106",
+        "timeCreation": 1777375244830,
+        "isSmart": true,
+        "isDeploy": true
+      }
+    ]
+  },
+  "response_error": {
+    "success": false,
+    "message": "publicKey is not valid base58"
+  },
+  "notes": "offset/limit default to 0/50 if omitted. Smart contract Deploy and Execute appear here too with isSmart=true."
+}

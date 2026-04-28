@@ -1,0 +1,34 @@
+{
+  "endpoint": "/api/Tokens/TransactionsGet",
+  "method": "POST",
+  "description": "Paged list of all transactions (transfer + admin) for a token contract (TokenTransactionsGet).",
+  "request": {
+    "token": "12DHXQ8rzYUawD6VSD6WuVaTQ4uen7fStWsTmZASnDv1",
+    "offset": 0,
+    "limit": 10
+  },
+  "response_success": {
+    "success": true,
+    "message": "Success: ",
+    "count": 200,
+    "transactions": [
+      {
+        "transactionId": "174621645.1",
+        "method": "transfer",
+        "params": [
+          { "K_TYPE": "STRING", "V_STRING": "GMpvxbByQgi7Zmx3DcFi2PKUByoGMAY2kASDUZpdEo5M" },
+          { "K_TYPE": "STRING", "V_STRING": "10.00" }
+        ],
+        "initiator": "EoPibFsGPE4xqXH2tYTBQUeJqSMMFvCZUdqAW9Bnh3nd",
+        "fee": "0.018",
+        "time": 1777375255320,
+        "state": 0
+      }
+    ]
+  },
+  "response_error_invalid": {
+    "success": false,
+    "message": "token is not valid base58"
+  },
+  "notes": "Includes both ERC-20-style 'transfer' calls and admin methods like 'approve', 'burn', 'register'. Aliases: 'Token', 'Offset', 'Limit'."
+}

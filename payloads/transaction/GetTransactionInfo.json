@@ -1,0 +1,30 @@
+{
+  "endpoint": "/api/Transaction/GetTransactionInfo",
+  "method": "POST",
+  "description": "Lookup a transaction by its on-chain id (poolSeq.index1).",
+  "request": {
+    "transactionId": "174621611.1"
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "transactionInfo": {
+      "transactionId": "174621611.1",
+      "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+      "receiverPublicKey": "GMpvxbByQgi7Zmx3DcFi2PKUByoGMAY2kASDUZpdEo5M",
+      "amount": "0.001",
+      "currency": 1,
+      "actualFee": "0.008740234375",
+      "timeCreation": 1777374960000,
+      "type": "TT_Transfer",
+      "isSmart": false,
+      "isDeploy": false,
+      "userFields": null
+    }
+  },
+  "response_error": {
+    "success": false,
+    "message": "Invalid Transaction ID format"
+  },
+  "notes": "transactionId is '<poolSeq>.<idx1>' where idx1 is 1-based (matches the format returned by /Transaction/Execute)."
+}

@@ -1,0 +1,31 @@
+{
+  "endpoint": "/api/Tokens/BalancesGet",
+  "method": "POST",
+  "description": "Returns the balance of every token held by the wallet (TokenBalancesGet).",
+  "request": {
+    "publicKey": "EoPibFsGPE4xqXH2tYTBQUeJqSMMFvCZUdqAW9Bnh3nd"
+  },
+  "response_success": {
+    "success": true,
+    "message": "Success: ",
+    "balances": [
+      {
+        "token": "12DHXQ8rzYUawD6VSD6WuVaTQ4uen7fStWsTmZASnDv1",
+        "name": "SERGE",
+        "symbol": "SRG",
+        "balance": "100.00",
+        "decimal": 2
+      }
+    ]
+  },
+  "response_error_node_no_token_api": {
+    "success": false,
+    "message": "This node doesn't provide such info",
+    "balances": []
+  },
+  "response_error_invalid": {
+    "success": false,
+    "message": "publicKey is not valid base58"
+  },
+  "notes": "Some node builds do not enable the token API — they answer 'This node doesn't provide such info' with success=false but HTTP 200. Aliases: 'PublicKey'."
+}

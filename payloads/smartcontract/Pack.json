@@ -1,0 +1,63 @@
+{
+  "endpoint": "/api/SmartContract/Pack",
+  "method": "POST",
+  "description": "Build the canonical signing payload for a SmartContract Deploy or Execute. Mirrors /Transaction/Pack but produces the byte stream the node validates for SmartContract transactions (transfer prefix + TBinaryProtocol-serialised SmartContractInvocation, prefixed by a single user-field marker). Mode is inferred from the body: byteCodeObjects (and optional sourceCode) without 'method' -> Deploy; 'method' set -> Execute.",
+  "request_deploy": {
+    "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+    "sourceCode": "import com.credits.scapi.v0.SmartContract;\n\npublic class BasicCounter extends SmartContract { ... }",
+    "byteCodeObjects": [
+      { "name": "BasicCounter", "byteCode": "yv66vgAAADcAGAoABAAUCQADABU..." }
+    ],
+    "feeAsString": "0.5"
+  },
+  "request_execute_no_args": {
+    "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+    "target": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3",
+    "method": "getCounter",
+    "params": [],
+    "feeAsString": "0.1"
+  },
+  "request_execute_with_int_arg": {
+    "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+    "target": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3",
+    "method": "setCounter",
+    "params": [
+      { "K_TYPE": "INT", "V_INT": 42 }
+    ],
+    "feeAsString": "0.1"
+  },
+  "response_success_deploy": {
+    "success": true,
+    "message": null,
+    "transactionInnerId": 199,
+    "contractAddress": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3",
+    "mode": "deploy",
+    "dataResponse": {
+      "transactionPackagedStr": "26471MrmaTVCnYgexM9EAveo6x5mrgPbZ3w5DJnXXQTz18Qb3RSxy8SApCV6Wtdberu9bEKDvmTGh1kmb8LzbwW4vuGt1NwvpYiPgGWu663tiCv6fEAqB1NeaxAKScQVLhibm8t7ZxjFkrqrmh4Ep2kBCRrYsy7tfG5WkAz1dGmfzBAb5Mo9MbZW9sWHpxrDyHniM3WS3h5hfjKLywN8mikYF9pVNaVzDq3kmPyeQtavEZjVA1vjDWfMcrNfvQPkXS",
+      "recommendedFee": 0.008740234375000001,
+      "actualSum": 0,
+      "publicKey": null,
+      "smartContractResult": null,
+      "contractAddress": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3"
+    }
+  },
+  "response_success_execute": {
+    "success": true,
+    "message": null,
+    "transactionInnerId": 200,
+    "mode": "execute",
+    "dataResponse": {
+      "transactionPackagedStr": "<base58-of-canonical-bytes>",
+      "recommendedFee": 0.008740234375000001,
+      "actualSum": 0,
+      "publicKey": null,
+      "smartContractResult": null,
+      "contractAddress": null
+    }
+  },
+  "response_error": {
+    "success": false,
+    "message": "Provide 'byteCodeObjects' for Deploy or 'method' for Execute"
+  },
+  "notes": "Client workflow: 1) call Pack; 2) base58.b58decode(transactionPackagedStr) -> raw bytes; 3) ed25519 sign -> 64-byte signature; 4) base58.b58encode(signature); 5) call /SmartContract/Deploy or /Execute with the signature AND the same transactionInnerId. The Deploy target address is derived from blake2s(deployer || inner_id || concat(byteCode)) — the gateway returns it so you can index the new contract immediately."
+}

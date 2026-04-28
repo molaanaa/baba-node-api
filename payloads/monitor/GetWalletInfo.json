@@ -1,0 +1,33 @@
+{
+  "endpoint": "/api/Monitor/GetWalletInfo",
+  "method": "POST",
+  "description": "Returns balance, delegations (donors/recipients), and the wallet's last inner transaction id. Heavier than GetBalance but covers everything a wallet UI needs in one round-trip.",
+  "request": {
+    "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw"
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "balance": 99.81941709869874,
+    "lastTransaction": 200,
+    "delegated": {
+      "incoming": 59310.01748046875,
+      "outgoing": 0,
+      "donors": [
+        {
+          "publicKey": "5HmxsYjsjkpcEDc118QkD5Jb73pnHcbQgWcfeM7Z4y4W",
+          "sum": 0.008740234375,
+          "coeff": 0,
+          "validFrom": 1616450914,
+          "validUntil": 0
+        }
+      ],
+      "recipients": []
+    }
+  },
+  "response_error": {
+    "success": false,
+    "message": "publicKey is not valid base58"
+  },
+  "notes": "Aliases: 'PublicKey' is also accepted. 'lastTransaction' is the wallet's last inner_id; the next valid transaction must use lastTransaction + 1."
+}

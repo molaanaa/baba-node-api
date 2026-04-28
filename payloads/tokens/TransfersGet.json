@@ -1,0 +1,35 @@
+{
+  "endpoint": "/api/Tokens/TransfersGet",
+  "method": "POST",
+  "description": "Paged list of transfer transactions for a given token contract (TokenTransfersGet).",
+  "request": {
+    "token": "12DHXQ8rzYUawD6VSD6WuVaTQ4uen7fStWsTmZASnDv1",
+    "offset": 0,
+    "limit": 10
+  },
+  "response_success": {
+    "success": true,
+    "message": "Success: ",
+    "count": 164,
+    "transfers": [
+      {
+        "transactionId": "174621645.1",
+        "sender": "EoPibFsGPE4xqXH2tYTBQUeJqSMMFvCZUdqAW9Bnh3nd",
+        "receiver": "GMpvxbByQgi7Zmx3DcFi2PKUByoGMAY2kASDUZpdEo5M",
+        "amount": "10.00",
+        "initiator": "EoPibFsGPE4xqXH2tYTBQUeJqSMMFvCZUdqAW9Bnh3nd",
+        "fee": "0.018",
+        "time": 1777375255320
+      }
+    ]
+  },
+  "response_error_invalid_token": {
+    "success": false,
+    "message": "token is not valid base58"
+  },
+  "response_error_paging": {
+    "success": false,
+    "message": "offset/limit must be integers"
+  },
+  "notes": "offset/limit default to 0/50. Aliases: 'Token', 'Offset', 'Limit'. 'count' is the total number of transfers ever recorded for this token (may be much larger than len(transfers))."
+}

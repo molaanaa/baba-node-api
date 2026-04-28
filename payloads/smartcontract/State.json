@@ -1,0 +1,21 @@
+{
+  "endpoint": "/api/SmartContract/State",
+  "method": "POST",
+  "description": "Fetch the current state blob and named variables of a deployed contract (SmartContractDataGet).",
+  "request": {
+    "address": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3"
+  },
+  "response_success": {
+    "success": true,
+    "message": "Success: ",
+    "state": "<state-blob>",
+    "variables": [
+      { "name": "counter", "type": "int", "value": "3" }
+    ]
+  },
+  "response_error": {
+    "success": false,
+    "message": "address is not valid base58"
+  },
+  "notes": "Some contracts expose their fields as named variables here; others only expose the opaque 'state' blob. The variable 'value' field is always a string regardless of the underlying Java type."
+}

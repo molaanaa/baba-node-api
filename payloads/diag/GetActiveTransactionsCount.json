@@ -1,0 +1,16 @@
+{
+  "endpoint": "/api/Diag/GetActiveTransactionsCount",
+  "method": "POST",
+  "description": "Total number of active (broadcast / in-flight) transactions on the network at the moment of the call.",
+  "request": {},
+  "response_success": {
+    "success": true,
+    "message": null,
+    "count": 4021351
+  },
+  "response_error": {
+    "success": false,
+    "message": "GetActiveTransactionsCount failed"
+  },
+  "notes": "Requires NODE_DIAG_PORT (typically 9088). The count is global across all transaction types."
+}

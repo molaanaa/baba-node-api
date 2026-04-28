@@ -1,0 +1,23 @@
+{
+  "endpoint": "/api/Diag/GetNodeInfo",
+  "method": "POST",
+  "description": "Detailed info about the queried node (version, last block, uptime, trust level, IP).",
+  "request": {},
+  "response_success": {
+    "success": true,
+    "message": null,
+    "info": {
+      "ip": "127.0.0.1",
+      "publicKey": "AoBfLKkPLxkvs36LefLn3wUtfcJ2iHjUaDF7LYJVpE42",
+      "version": "532",
+      "lastBlock": 174570748,
+      "uptimeSeconds": 12345,
+      "trustLevel": null
+    }
+  },
+  "response_error": {
+    "success": false,
+    "message": "GetNodeInfo failed"
+  },
+  "notes": "The gateway constructs an empty NodeInfoRequest (all fields optional) before calling the Thrift method. Many builds return mostly nulls — only 'version' is consistently populated."
+}

@@ -1,0 +1,53 @@
+{
+  "endpoint": "/api/SmartContract/Deploy",
+  "method": "POST",
+  "description": "Broadcast a signed Deploy transaction. Requires the signature obtained by signing the bytes from /SmartContract/Pack, plus the same byteCodeObjects/sourceCode and transactionInnerId.",
+  "request": {
+    "PublicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+    "TransactionSignature": "2YtBEGpiHCNs1aw86nEa1E5AdG8EM9aZUgM7gG6n4B6EqnCtranxiSHsw8yZmJuPpMBTSW4ZZg295Hb9LubFFngD",
+    "sourceCode": "import com.credits.scapi.v0.SmartContract;\n\npublic class BasicCounter extends SmartContract { ... }",
+    "byteCodeObjects": [
+      { "name": "BasicCounter", "byteCode": "yv66vgAAADcAGAoABAAU..." }
+    ],
+    "feeAsString": "0.5",
+    "transactionInnerId": 199,
+    "userData": ""
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "messageError": null,
+    "transactionId": "174621620.1",
+    "transactionInnerId": 199,
+    "actualFee": "0.106",
+    "actualSum": "0.0",
+    "amount": "0.0",
+    "blockId": 0,
+    "dataResponse": {
+      "actualSum": 0,
+      "publicKey": null,
+      "recommendedFee": 0.008740234375000001,
+      "smartContractResult": null,
+      "transactionPackagedStr": null
+    }
+  },
+  "response_error_wrong_signature": {
+    "success": false,
+    "message": null,
+    "messageError": "Transaction has wrong signature.",
+    "transactionId": "0.1",
+    "transactionInnerId": 199
+  },
+  "response_error_low_fee": {
+    "success": false,
+    "message": null,
+    "messageError": "Transaction's max fee is not enough to issue transaction. Counted fee will be 0.096191.",
+    "transactionId": "0.1",
+    "transactionInnerId": 199
+  },
+  "response_error_missing_input": {
+    "success": false,
+    "message": "Missing PublicKey"
+  },
+  "notes": "transactionId='0.1' (poolSeq=0) means rejected pre-broadcast — NO fee consumed. Always reuse the EXACT same transactionInnerId returned by /SmartContract/Pack and the EXACT same byteCodeObjects/sourceCode (the gateway re-derives the contract address from these). Aliases: 'PublicKey'/'publicKey', 'TransactionSignature'/'signature', 'TransactionInnerId'/'innerId'. The contract address is deterministic: derive_contract_address(deployer, inner_id, byteCodeObjects) — see /SmartContract/Pack response."
+}

@@ -1,0 +1,45 @@
+{
+  "endpoint": "/api/UserFields/Decode",
+  "method": "POST",
+  "description": "Decode an ArtVerse userFields v1 payload (base58) back into a typed object. Inverse of /UserFields/Encode. Round-trip stable.",
+  "request": {
+    "userData": "BEnKE2jn3kaM8msTaRVk6acQd2vWWffB7H3z3jScuZALxUQf3yqp6S8GniYUg6xr2jRaE3QQG2pkdPtmzVKtcYshP3HBb79jnJuxuMN13KbXCpFPHKCMj28pQBY"
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "fields": {
+      "version": 1,
+      "contentHashAlgo": "sha-256",
+      "contentHash": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      "contentCid": "bafybeigdyrabc",
+      "mime": "image/png",
+      "sizeBytes": 1234567
+    }
+  },
+  "response_success_with_unknown_tlv": {
+    "success": true,
+    "message": null,
+    "fields": {
+      "version": 1,
+      "mime": "image/png",
+      "sizeBytes": 1234567,
+      "extra": [
+        { "type": 200, "value_hex": "deadbeef" }
+      ]
+    }
+  },
+  "response_error_bad_magic": {
+    "success": false,
+    "message": "userData header magic mismatch (expected ARTV)"
+  },
+  "response_error_unknown_version": {
+    "success": false,
+    "message": "userData version 2 not supported (only 1)"
+  },
+  "response_error_bad_b58": {
+    "success": false,
+    "message": "userData is not valid base58"
+  },
+  "notes": "Unknown TLV types are preserved in 'extra' as hex so they can be re-attached/forwarded losslessly. Aliases: 'UserData'."
+}

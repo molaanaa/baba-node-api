@@ -1,0 +1,34 @@
+{
+  "endpoint": "/api/Tokens/HoldersGet",
+  "method": "POST",
+  "description": "Paged list of token holders, optionally sorted (TokenHoldersGet).",
+  "request": {
+    "token": "12DHXQ8rzYUawD6VSD6WuVaTQ4uen7fStWsTmZASnDv1",
+    "offset": 0,
+    "limit": 10,
+    "order": 0,
+    "desc": true
+  },
+  "response_success": {
+    "success": true,
+    "message": "Success: ",
+    "count": 12,
+    "holders": [
+      {
+        "holder": "EoPibFsGPE4xqXH2tYTBQUeJqSMMFvCZUdqAW9Bnh3nd",
+        "balance": "999000.00",
+        "transfersCount": 100
+      },
+      {
+        "holder": "GMpvxbByQgi7Zmx3DcFi2PKUByoGMAY2kASDUZpdEo5M",
+        "balance": "1000.00",
+        "transfersCount": 1
+      }
+    ]
+  },
+  "response_error_invalid": {
+    "success": false,
+    "message": "token is not valid base58"
+  },
+  "notes": "order: TokenHoldersSortField — 0=BALANCE, 1=TRANSFERS_COUNT (varies by node build). desc: true=descending. Older node builds may not support 'desc' — the gateway falls back to the 4-arg form automatically. Aliases: 'Token', 'Offset', 'Limit', 'Order', 'Desc'."
+}
