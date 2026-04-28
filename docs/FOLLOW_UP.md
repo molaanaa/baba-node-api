@@ -104,12 +104,41 @@ emersi solo a runtime.
     inoltre l'import esplicito `import com.credits.scapi.v0.SmartContract;`
     nel sourceCode — aggiunto un nota nel README/docs.
 
-**Limitazione architetturale residua — `/SmartContract/Pack` mancante**:
+**~~Limitazione architetturale residua — `/SmartContract/Pack` mancante~~ — RISOLTA (sessione 2026-04-28)**:
 
-Gli endpoint `/SmartContract/Deploy` e `/SmartContract/Execute` accettano
-`signature` come input, ma il branch non offre un complementare
-`/SmartContract/Pack` che restituisca il payload canonico da firmare
-(come fa `/Transaction/Pack` per i transfer normali). Il payload firmato
+Aggiunto `POST /SmartContract/Pack` (e alias `/api/SmartContract/Pack`) che,
+specchiando `/Transaction/Pack`, restituisce il payload canonico da firmare
+per Deploy ed Execute. La canonical serialization è documentata in
+`services/contracts.py` (modulo docstring) ed è equivalente a quella usata
+da `cssdk.py:deployContract/executeContract`:
+
+    inner_id (6 LE) | source (32) | target (32) | amount.int (4 LE)
+    | amount.frac (8 LE) | fee.bits (2 LE) | currency (1)
+    | uf_marker (1) | sc_len (4 LE) | sc_bytes (TBinaryProtocol di
+    SmartContractInvocation, con `_apply_invocation_defaults` per matchare
+    i default che il nodo si aspetta)
+
+Per Deploy il `target` è derivato deterministicamente con
+`derive_contract_address(deployer, inner_id, byteCodeObjects)` =
+`blake2s(source || inner_id_LE6 || concat(byteCode))`. Il route
+`/SmartContract/Deploy` ricostruisce lo stesso target server-side così che
+la Transaction inviata via TransactionFlow combaci esattamente con quella
+che il client ha firmato.
+
+I 2 endpoint Deploy/Execute accettano ora `transactionInnerId` come override
+in input — necessario perché tra il Pack e il Deploy/Execute il client deve
+fissare l'inner_id (altrimenti una tx interleaved sullo stesso wallet
+sposterebbe il valore e la firma non match-erebbe più).
+
+**Validato on-chain (mainnet)**:
+- D3 Deploy di `BasicCounter`: contratto deployato a
+  `FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3` (fee ~0.1 CS), `SmartContract/Get`
+  conferma sourceCode + bytecode corretti.
+- D4 Execute `getCounter()` sul contratto: `transactionsCount` del contratto
+  passa da 0 a 4 dopo le execute, balance del wallet scende coerentemente.
+
+Nota operativa: `_execute_smart_tx` ora apre il client Thrift con timeout 90s
+(Deploy/Execute possono richiedere consensus + executor invocation, > 30s). Il payload firmato
 per smart-contract Deploy/Execute deve includere la serializzazione di
 `SmartContractInvocation` (e per Deploy, di `SmartContractDeploy` con
 `sourceCode + byteCodeObjects`), non solo la transfer-part. Senza un
@@ -127,6 +156,8 @@ A runtime, il nodo conferma il problema:
   `transactionId: "0.1"` (rifiutato pre-broadcast, **nessuna fee
   consumata** — ottimo dal punto di vista safety, frustrante dal punto
   di vista UX). La firma transfer-only è insufficiente.
+
+  **Risolto nella sessione 2026-04-28** con `/SmartContract/Pack` (vedi sotto).
 
 **Task follow-up**: aggiungere `/SmartContract/Pack` e `/api/SmartContract/Pack`
 con la stessa shape di `/Transaction/Pack` ma che produce la serializzazione

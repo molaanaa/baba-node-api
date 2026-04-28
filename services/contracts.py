@@ -12,13 +12,39 @@ The node does not expose dedicated Deploy/Execute RPCs; the gateway shapes a
 ``Transaction`` struct with the right type/smartContract fields and forwards
 it via ``TransactionFlow`` exactly as the existing /Transaction/Execute path
 does.
+
+Canonical signing payload for Deploy/Execute transactions
+---------------------------------------------------------
+
+The node validates the ed25519 signature against the following little-endian
+byte stream (mirrors CREDITSCOM/sdk_python `cssdk.py:deployContract` /
+`executeContract`)::
+
+    inner_id   : 6 bytes  little-endian (truncated u64)
+    source     : 32 bytes (sender public key)
+    target     : 32 bytes (deploy: blake2s(source||innerId(6)||concat(byteCode));
+                            execute: contract address)
+    amount.int : 4 bytes  little-endian signed (i32)
+    amount.frac: 8 bytes  little-endian signed (i64)
+    fee.bits   : 2 bytes  little-endian unsigned (u16)
+    currency   : 1 byte   (0x01 for CS)
+    uf_marker  : 1 byte   (0x01 — one user-field, the SmartContract)
+    sc_len     : 4 bytes  little-endian (u32) length of sc_bytes
+    sc_bytes   : Thrift TBinaryProtocol serialisation of SmartContractInvocation
+
+Helper :func:`pack_smart_transaction` produces this stream and
+:func:`derive_contract_address` computes the Deploy target address.
 """
 
 from __future__ import annotations
 
+import hashlib
+import struct
 from typing import Any, Iterable, Optional
 
 import base58
+from thrift.protocol import TBinaryProtocol
+from thrift.transport import TTransport
 
 
 # Credits transaction type field. Matches the type_defs table already used in
@@ -159,6 +185,36 @@ def build_smart_invocation(
     return sc
 
 
+def _apply_invocation_defaults(invocation: Any) -> None:
+    """Populate optional Thrift fields with the same defaults as the SDKs.
+
+    The signed payload includes the TBinaryProtocol serialization of this
+    struct, so the Deploy/Execute path on the gateway MUST set the same
+    defaults the Pack endpoint set, or the rebuilt invocation will hash
+    differently and the node will reject the signature.
+    """
+    if hasattr(invocation, "method") and getattr(invocation, "method", None) is None:
+        invocation.method = ""
+    if hasattr(invocation, "params") and getattr(invocation, "params", None) is None:
+        invocation.params = []
+    if hasattr(invocation, "usedContracts") and getattr(invocation, "usedContracts", None) is None:
+        invocation.usedContracts = []
+    if hasattr(invocation, "forgetNewState") and getattr(invocation, "forgetNewState", None) is None:
+        invocation.forgetNewState = False
+    if hasattr(invocation, "version") and getattr(invocation, "version", None) is None:
+        invocation.version = 1
+    deploy = getattr(invocation, "smartContractDeploy", None)
+    if deploy is not None:
+        if hasattr(deploy, "hashState") and getattr(deploy, "hashState", None) is None:
+            deploy.hashState = ""
+        if hasattr(deploy, "tokenStandard") and getattr(deploy, "tokenStandard", None) is None:
+            deploy.tokenStandard = 0
+        if hasattr(deploy, "lang") and getattr(deploy, "lang", None) is None:
+            deploy.lang = 0
+        if hasattr(deploy, "methods") and getattr(deploy, "methods", None) is None:
+            deploy.methods = []
+
+
 def build_deploy_transaction(
     types_ns: Any,
     *,
@@ -190,6 +246,7 @@ def build_deploy_transaction(
         source_code=source_code,
         byte_code_objects=byte_code_objects,
     )
+    _apply_invocation_defaults(tx.smartContract)
     if hasattr(tx, "type"):
         tx.type = TT_SMART_DEPLOY
     return tx
@@ -230,6 +287,7 @@ def build_execute_transaction(
         params=params,
         forget_new_state=forget_new_state,
     )
+    _apply_invocation_defaults(tx.smartContract)
     if hasattr(tx, "type"):
         tx.type = TT_SMART_EXECUTE
     return tx
@@ -331,3 +389,172 @@ def map_list_by_wallet(res: Any) -> dict:
         "message": s["message"] or None,
         "contracts": [map_smart_contract(x) for x in items],
     }
+
+
+# ---------------------------------------------------------------------------
+# Canonical signing payload for SmartContract Deploy / Execute
+# ---------------------------------------------------------------------------
+
+def _inner_id_to_bytes6(inner_id: int) -> bytes:
+    """Encode the 64-bit inner id as 6 little-endian bytes (per Credits scheme)."""
+    if inner_id < 0:
+        raise ValueError("inner_id must be non-negative")
+    return struct.pack("<Q", int(inner_id))[:6]
+
+
+def derive_contract_address(deployer_bytes: bytes, inner_id: int,
+                            byte_code_objects: Iterable[Any]) -> bytes:
+    """Mirror cssdk.createContractAddress: blake2s(source || innerId(6 bytes LE)
+    || concat(byteCode for each ByteCodeObject)). Returns 32 raw bytes.
+
+    ``byte_code_objects`` may contain Thrift ``ByteCodeObject`` instances or
+    JSON-friendly dicts ``{'name': ..., 'byteCode': '<base64>' or bytes}``.
+    """
+    h = hashlib.blake2s()
+    h.update(bytes(deployer_bytes))
+    h.update(_inner_id_to_bytes6(inner_id))
+    for bco in byte_code_objects or []:
+        if isinstance(bco, dict):
+            raw = bco.get("byteCode") or b""
+            if isinstance(raw, str):
+                import base64
+                raw = base64.b64decode(raw, validate=False)
+            h.update(bytes(raw))
+        else:
+            raw = getattr(bco, "byteCode", b"") or b""
+            if isinstance(raw, str):
+                import base64
+                raw = base64.b64decode(raw, validate=False)
+            h.update(bytes(raw))
+    return h.digest()
+
+
+def _serialize_invocation_thrift(invocation: Any) -> bytes:
+    """Serialise a SmartContractInvocation through TBinaryProtocol.
+
+    Matches `cssdk.deployContract`: ``contract.write(protocol)`` against a
+    TMemoryBuffer; the resulting bytes are what the node expects in the
+    signed payload (and what its own deserializer rebuilds to validate the
+    signature).
+    """
+    buf = TTransport.TMemoryBuffer()
+    proto = TBinaryProtocol.TBinaryProtocol(buf)
+    invocation.write(proto)
+    return buf.getvalue()
+
+
+def pack_smart_transaction(
+    types_ns: Any,
+    *,
+    inner_id: int,
+    source_bytes: bytes,
+    target_bytes: bytes,
+    fee_bits: int,
+    invocation: Any,
+    amount_integral: int = 0,
+    amount_fraction: int = 0,
+    currency: int = 1,
+    user_fields_marker: bytes = b"\x01",
+) -> bytes:
+    """Build the canonical signing payload for a SmartContract Deploy/Execute.
+
+    See module docstring for the byte-level layout. Pass a fully-populated
+    ``invocation`` (SmartContractInvocation Thrift instance); for a fresh
+    Execute payload use :func:`build_smart_invocation`.
+
+    ``types_ns`` is accepted for parity with the builder API and to allow
+    future enrichment (e.g. defaulting missing optional fields) without a
+    signature change.
+    """
+    sc_bytes = _serialize_invocation_thrift(invocation)
+    out = bytearray()
+    out += _inner_id_to_bytes6(inner_id)
+    if len(source_bytes) != 32:
+        raise ValueError(f"source must be 32 bytes, got {len(source_bytes)}")
+    out += bytes(source_bytes)
+    if target_bytes is None:
+        target_bytes = b""
+    if len(target_bytes) not in (0, 32):
+        raise ValueError(f"target must be 32 or 0 bytes, got {len(target_bytes)}")
+    # Pad an empty target to 32 bytes of zeros — the canonical scheme always
+    # consumes 32 bytes here (Deploy uses the derived address; we still
+    # accept an empty target for callers that want to compute it themselves).
+    out += bytes(target_bytes).ljust(32, b"\x00")
+    out += struct.pack("<i", int(amount_integral))
+    out += struct.pack("<q", int(amount_fraction))
+    out += struct.pack("<H", int(fee_bits) & 0xFFFF)
+    out += struct.pack("<b", int(currency))
+    if not user_fields_marker:
+        user_fields_marker = b"\x01"
+    out += bytes(user_fields_marker[:1])
+    out += struct.pack("<I", len(sc_bytes))
+    out += sc_bytes
+    return bytes(out)
+
+
+def build_pack_deploy_payload(
+    types_ns: Any,
+    *,
+    deployer_bytes: bytes,
+    inner_id: int,
+    fee_bits: int,
+    byte_code_objects: Iterable[dict],
+    source_code: str,
+    user_fields: bytes = b"",
+) -> "tuple[bytes, bytes]":
+    """High-level helper: build invocation + canonical payload for Deploy.
+
+    Returns ``(payload_bytes, contract_address_bytes)``. The caller signs
+    ``payload_bytes`` with ed25519 and calls ``/SmartContract/Deploy`` with
+    the signature plus the same source/byteCode payload (so the gateway
+    rebuilds an identical Transaction on the way to TransactionFlow).
+    """
+    bcos_thrift = build_byte_code_objects(types_ns, byte_code_objects)
+    contract_addr = derive_contract_address(deployer_bytes, inner_id, bcos_thrift)
+    invocation = build_smart_invocation(
+        types_ns,
+        source_code=source_code,
+        byte_code_objects=byte_code_objects,
+    )
+    _apply_invocation_defaults(invocation)
+    payload = pack_smart_transaction(
+        types_ns,
+        inner_id=inner_id,
+        source_bytes=deployer_bytes,
+        target_bytes=contract_addr,
+        fee_bits=fee_bits,
+        invocation=invocation,
+    )
+    return payload, contract_addr
+
+
+def build_pack_execute_payload(
+    types_ns: Any,
+    *,
+    sender_bytes: bytes,
+    contract_bytes: bytes,
+    inner_id: int,
+    fee_bits: int,
+    method: str,
+    params: Iterable[dict] = (),
+    forget_new_state: bool = False,
+    user_fields: bytes = b"",
+) -> bytes:
+    """High-level helper: build invocation + canonical payload for Execute."""
+    if not method:
+        raise ValueError("method is required for Execute")
+    invocation = build_smart_invocation(
+        types_ns,
+        method=method,
+        params=params,
+        forget_new_state=forget_new_state,
+    )
+    _apply_invocation_defaults(invocation)
+    return pack_smart_transaction(
+        types_ns,
+        inner_id=inner_id,
+        source_bytes=sender_bytes,
+        target_bytes=contract_bytes,
+        fee_bits=fee_bits,
+        invocation=invocation,
+    )

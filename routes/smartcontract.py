@@ -71,7 +71,10 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
         return (sender_b, target_b, sig_b, user_fields), None
 
     def _execute_smart_tx(tx, rec_fee, inner_id, amount_str="0"):
-        client, transport = get_node_client(timeout_ms=30000)
+        # Smart contract Deploy/Execute can take well over 30s end-to-end
+        # (consensus + executor invocation), so we give the node-side
+        # TransactionFlow plenty of socket headroom.
+        client, transport = get_node_client(timeout_ms=90000)
         if not client:
             return jsonify({"success": False, "message": "Node Unavailable"}), 503
         try:
@@ -102,20 +105,182 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
             if transport and transport.isOpen():
                 transport.close()
 
-    def _resolve_inner_id_and_fee(sender_b, user_fields):
+    def _resolve_inner_id_and_fee(sender_b, user_fields, *, override_inner_id=None):
+        """Resolve next ``inner_id`` and a recommended fee.
+
+        If ``override_inner_id`` is set, skip the WalletDataGet round-trip and
+        return it as-is. This is critical for Deploy/Execute paths that have
+        to use the same ``inner_id`` the client signed via ``/SmartContract/Pack``;
+        otherwise an interleaved transaction on the same wallet shifts the
+        rebuild and the signature no longer matches.
+        """
         client_ref, ref_transport = get_node_client()
-        inner_id = 1
+        inner_id = override_inner_id if override_inner_id else 1
         rec_fee = 0.0
         if client_ref:
             try:
-                wdata = getattr(client_ref.WalletDataGet(sender_b), "walletData", None)
-                inner_id = safe_int(getattr(wdata, "lastTransactionId", 0)) + 1
+                if override_inner_id is None:
+                    wdata = getattr(client_ref.WalletDataGet(sender_b), "walletData", None)
+                    inner_id = safe_int(getattr(wdata, "lastTransactionId", 0)) + 1
                 base_fee = bits_to_fee(getattr(client_ref.ActualFeeGet(0), "fee", 0))
                 rec_fee = float(base_fee) * float(get_fee_multiplier(len(user_fields) or 1))
             finally:
                 if ref_transport and ref_transport.isOpen():
                     ref_transport.close()
         return inner_id, rec_fee
+
+    @bp.route("/SmartContract/Pack", methods=["POST"])
+    @bp.route("/api/SmartContract/Pack", methods=["POST"])
+    @limiter.limit("2 per 10 seconds")
+    def smart_contract_pack():
+        """Build the canonical signing payload for a SmartContract Deploy or
+        Execute transaction.
+
+        Mirrors ``/Transaction/Pack`` but produces the byte stream the node
+        validates for SmartContract transactions: transfer prefix +
+        TBinaryProtocol-serialised SmartContractInvocation, prefixed by a
+        single user-field marker. See ``services.contracts`` for the schema.
+
+        Mode is inferred from the body:
+          * ``byteCodeObjects`` (and optional ``sourceCode``) without
+            ``method`` -> Deploy. Target address is derived via blake2s.
+          * ``method`` set                                     -> Execute.
+            Requires ``target`` (base58 contract address).
+
+        Response shape mimics ``/Transaction/Pack``: ``transactionPackagedStr``
+        (base58 of the bytes-to-sign) and ``recommendedFee``. Deploy responses
+        also include ``contractAddress`` so the caller can re-use it on
+        ``/SmartContract/Deploy``.
+        """
+        data = request.json or {}
+        pub = get_json_val(data, ["PublicKey", "publicKey"], "")
+        if not pub:
+            return jsonify({"success": False, "message": "Missing PublicKey"}), 400
+        sender_b, err = _decode_address(pub, "PublicKey")
+        if err:
+            return jsonify({"success": False, "message": err[0]}), err[1]
+
+        method = get_json_val(data, ["method", "Method"], "") or ""
+        bcos_raw = get_json_val(data, ["byteCodeObjects", "ByteCodeObjects"], None)
+        source_code = get_json_val(data, ["sourceCode", "SourceCode"], "") or ""
+
+        is_deploy = bool(bcos_raw) and not method
+        is_execute = bool(method)
+        if not is_deploy and not is_execute:
+            return jsonify({"success": False,
+                            "message": "Provide 'byteCodeObjects' for Deploy "
+                                       "or 'method' for Execute"}), 400
+
+        target_b = b""
+        if is_execute:
+            target_b, err = _decode_address(
+                get_json_val(data,
+                             ["target", "Target",
+                              "contractAddress", "ContractAddress"], ""),
+                "target",
+            )
+            if err:
+                return jsonify({"success": False, "message": err[0]}), err[1]
+
+        params = get_json_val(data, ["params", "Params"], []) or []
+        forget_new_state = bool(get_json_val(data,
+                                             ["forgetNewState", "ForgetNewState"],
+                                             False))
+
+        fee_str = get_json_val(data, ["feeAsString", "Fee"], "0")
+        try:
+            fee_override = float(fee_str)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "Invalid feeAsString"}), 400
+
+        # Resolve next inner_id and base recommended fee from the node.
+        client_ref, ref_transport = get_node_client()
+        if not client_ref:
+            return jsonify({"success": False, "message": "Node Unavailable"}), 503
+        try:
+            try:
+                wdata = getattr(client_ref.WalletDataGet(sender_b), "walletData", None)
+            except Exception:
+                wdata = None
+            inner_id = safe_int(getattr(wdata, "lastTransactionId", 0)) + 1
+
+            try:
+                base_fee = bits_to_fee(getattr(client_ref.ActualFeeGet(0), "fee", 0))
+            except Exception:
+                base_fee = 0
+            # Smart contract payloads are typically larger than a transfer; use
+            # the same multiplier scheme but key off a representative size:
+            #  - Deploy: source + concat(byteCode); Execute: method + params(0).
+            if is_deploy:
+                approx_size = len(source_code or "")
+                for entry in (bcos_raw or []):
+                    if isinstance(entry, dict):
+                        bc = entry.get("byteCode") or ""
+                        approx_size += len(bc) if isinstance(bc, str) else len(bc)
+            else:
+                approx_size = len(method) + 32
+            rec_fee = float(base_fee) * float(get_fee_multiplier(approx_size or 1))
+        finally:
+            if ref_transport and ref_transport.isOpen():
+                ref_transport.close()
+
+        use_fee = fee_override if fee_override > 0 else rec_fee
+        try:
+            fee_bits = fee_to_bits(use_fee)
+        except Exception:
+            return jsonify({"success": False, "message": "Invalid fee value"}), 400
+
+        try:
+            if is_deploy:
+                payload, contract_addr = _contracts.build_pack_deploy_payload(
+                    thrift_ns,
+                    deployer_bytes=sender_b,
+                    inner_id=inner_id,
+                    fee_bits=fee_bits,
+                    byte_code_objects=bcos_raw,
+                    source_code=source_code,
+                )
+            else:
+                payload = _contracts.build_pack_execute_payload(
+                    thrift_ns,
+                    sender_bytes=sender_b,
+                    contract_bytes=target_b,
+                    inner_id=inner_id,
+                    fee_bits=fee_bits,
+                    method=method,
+                    params=params,
+                    forget_new_state=forget_new_state,
+                )
+                contract_addr = None
+        except (ValueError, AttributeError) as e:
+            return jsonify({"success": False, "message": str(e)}), 400
+        except Exception as e:
+            log(f"SmartContract Pack Error: {e}", is_error=True)
+            return jsonify({"success": False, "message": "SmartContract Pack failed"}), 400
+
+        body = {
+            "success": True,
+            "dataResponse": {
+                "transactionPackagedStr": base58.b58encode(payload).decode("utf-8"),
+                "recommendedFee": rec_fee,
+                "actualSum": 0,
+                "publicKey": None,
+                "smartContractResult": None,
+                "contractAddress": (
+                    base58.b58encode(contract_addr).decode("utf-8")
+                    if contract_addr else None
+                ),
+            },
+            "actualFee": 0, "actualSum": 0, "amount": 0, "blockId": 0,
+            "extraFee": None, "flowResult": None, "listItem": [],
+            "listTransactionInfo": None, "message": None,
+            "transactionId": None, "transactionInfo": None,
+            "transactionInnerId": inner_id,
+            "mode": "deploy" if is_deploy else "execute",
+        }
+        if contract_addr:
+            body["contractAddress"] = base58.b58encode(contract_addr).decode("utf-8")
+        return jsonify(body)
 
     @bp.route("/SmartContract/Compile", methods=["POST"])
     @bp.route("/api/SmartContract/Compile", methods=["POST"])
@@ -283,13 +448,34 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
         except (TypeError, ValueError):
             return jsonify({"success": False, "message": "Invalid feeAsString"}), 400
 
-        inner_id, rec_fee = _resolve_inner_id_and_fee(sender_b, user_fields)
+        client_inner_id = get_json_val(data,
+                                       ["transactionInnerId", "TransactionInnerId",
+                                        "innerId", "InnerId"], None)
+        try:
+            client_inner_id = int(client_inner_id) if client_inner_id is not None else None
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "Invalid transactionInnerId"}), 400
+
+        inner_id, rec_fee = _resolve_inner_id_and_fee(
+            sender_b, user_fields, override_inner_id=client_inner_id,
+        )
+
+        # Pack signs over derive_contract_address(sender, inner_id, bcos);
+        # the rebuilt Transaction must carry the same target or the node
+        # rejects the signature.
+        try:
+            bcos_thrift = _contracts.build_byte_code_objects(thrift_ns, bcos_raw)
+            derived_target = _contracts.derive_contract_address(
+                sender_b, inner_id, bcos_thrift,
+            )
+        except (ValueError, AttributeError) as e:
+            return jsonify({"success": False, "message": str(e)}), 400
 
         try:
             tx = _contracts.build_deploy_transaction(
                 thrift_ns,
                 deployer_bytes=sender_b,
-                target_bytes=target_b,
+                target_bytes=derived_target,
                 byte_code_objects=bcos_raw,
                 source_code=source_code,
                 fee_bits=fee_bits,
@@ -329,7 +515,17 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
         except (TypeError, ValueError):
             return jsonify({"success": False, "message": "Invalid feeAsString"}), 400
 
-        inner_id, rec_fee = _resolve_inner_id_and_fee(sender_b, user_fields)
+        client_inner_id = get_json_val(data,
+                                       ["transactionInnerId", "TransactionInnerId",
+                                        "innerId", "InnerId"], None)
+        try:
+            client_inner_id = int(client_inner_id) if client_inner_id is not None else None
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "Invalid transactionInnerId"}), 400
+
+        inner_id, rec_fee = _resolve_inner_id_and_fee(
+            sender_b, user_fields, override_inner_id=client_inner_id,
+        )
 
         try:
             tx = _contracts.build_execute_transaction(

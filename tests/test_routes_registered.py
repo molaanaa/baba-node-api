@@ -30,6 +30,7 @@ EXPECTED_ROUTES = {
     "/SmartContract/Methods",
     "/SmartContract/State",
     "/SmartContract/ListByWallet",
+    "/SmartContract/Pack",
     # Section 2 - Token API
     "/Tokens/BalancesGet",
     "/Tokens/TransfersGet",

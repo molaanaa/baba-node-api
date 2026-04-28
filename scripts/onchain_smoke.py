@@ -134,64 +134,36 @@ def d2_compile() -> dict:
 
 
 # ============================================================================
-# D3 — Deploy via /api/SmartContract/Deploy
-# Note: the new endpoint expects the signature to cover the canonical Credits
-# Transaction including the SmartContractInvocation; if the canonical scheme
-# diverges from a transfer-only sign, the node rejects TransactionFlow before
-# any fee is consumed (TransactionFlow validates signature first).
+# D3 — Deploy via /api/SmartContract/Pack -> sign -> /api/SmartContract/Deploy
 # ============================================================================
 
-def _serialize_transfer_part(inner_id: int, source: bytes, target: bytes,
-                             amount_int: int, amount_frac: int,
-                             fee_bits: int, sf_bytes: bytes = b"\x00") -> bytes:
-    import struct
-    data = struct.pack("<Q", inner_id)[:6] + source + target
-    data += struct.pack("<i", amount_int) + struct.pack("<q", amount_frac)
-    data += struct.pack("<H", fee_bits) + struct.pack("B", 1)  # currency=1
-    data += sf_bytes
-    return data
-
-
 def d3_deploy(compile_resp: dict) -> dict:
-    section("D3 — SmartContract/Deploy (BasicCounter)")
+    section("D3 — SmartContract/Pack -> sign -> /SmartContract/Deploy (BasicCounter)")
     bcos = compile_resp.get("byteCodeObjects") or []
     if not bcos:
         raise SystemExit("D3 abort: no byteCodeObjects from Compile")
 
-    # Resolve the next inner_id from the node
-    info = post("/api/Monitor/GetWalletInfo", {"publicKey": SENDER_PUB_B58})
-    if not info.get("success"):
-        raise SystemExit(f"D3 abort: GetWalletInfo failed: {info}")
-    inner_id = (info.get("lastTransaction") or 0) + 1
-    print(f"   next inner_id: {inner_id}")
-
-    sender = base58.b58decode(SENDER_PUB_B58)
-    # Sign the transfer-part of the canonical Transaction. The node-counted
-    # fee for a Deploy is well above the simple-transfer baseline, so we
-    # encode a generous max fee (0.5 CS).
+    # Bound the max fee we authorise (signed into the payload).
     fee_cs = 0.5
-    # Mirror gateway.fee_to_bits() exactly so the signed payload matches.
-    import math
-    def _fee_to_bits(f: float) -> int:
-        try:
-            val = float(f); commission = 0
-            if val < 0.0:
-                commission += 32768
-            else:
-                val = math.fabs(val)
-                expf = 0.0 if val == 0.0 else math.log10(val)
-                expi = int(expf + 0.5 if expf >= 0.0 else expf - 0.5)
-                if val > 0: val /= math.pow(10, expi)
-                if val >= 1.0:
-                    val *= 0.1; expi += 1
-                commission += int(1024 * (expi + 18))
-                commission += int(val * 1024)
-            return commission
-        except (ValueError, TypeError):
-            return 0
-    fee_bits = _fee_to_bits(fee_cs)
-    payload = _serialize_transfer_part(inner_id, sender, b"", 0, 0, fee_bits)
+
+    pack = post("/api/SmartContract/Pack", {
+        "publicKey": SENDER_PUB_B58,
+        "sourceCode": BASIC_COUNTER_SRC,
+        "byteCodeObjects": bcos,
+        "feeAsString": str(fee_cs),
+    })
+    if not pack.get("success"):
+        raise SystemExit(f"D3 abort: Pack failed: {pack}")
+
+    packed_b58 = pack["dataResponse"]["transactionPackagedStr"]
+    contract_addr = pack["dataResponse"].get("contractAddress") or pack.get("contractAddress")
+    inner_id = pack.get("transactionInnerId")
+    print(f"   inner_id: {inner_id}, contract address: {contract_addr}")
+
+    payload = base58.b58decode(packed_b58)
+    print(f"   packed bytes ({len(payload)}B), first 96B: {payload[:96].hex()}")
     sig_b58 = sign_b58(payload)
+    print(f"   signature (b58): {sig_b58}")
 
     resp = post("/api/SmartContract/Deploy", {
         "publicKey": SENDER_PUB_B58,
@@ -199,41 +171,36 @@ def d3_deploy(compile_resp: dict) -> dict:
         "sourceCode": BASIC_COUNTER_SRC,
         "byteCodeObjects": bcos,
         "feeAsString": str(fee_cs),
+        "transactionInnerId": inner_id,
     })
+    if resp.get("success"):
+        resp.setdefault("contractAddress", contract_addr)
     return resp
 
 
 # ============================================================================
-# D4 — Execute getCounter() via /api/SmartContract/Execute
+# D4 — Execute getCounter() via /api/SmartContract/Pack -> sign -> Execute
 # ============================================================================
 
 def d4_execute(contract_address_b58: str) -> dict:
-    section(f"D4 — SmartContract/Execute (getCounter on {contract_address_b58[:12]}...)")
-    info = post("/api/Monitor/GetWalletInfo", {"publicKey": SENDER_PUB_B58})
-    inner_id = (info.get("lastTransaction") or 0) + 1
-    sender = base58.b58decode(SENDER_PUB_B58)
-    target = base58.b58decode(contract_address_b58)
+    section(f"D4 — SmartContract/Pack -> sign -> /SmartContract/Execute "
+            f"(getCounter on {contract_address_b58[:12]}...)")
     fee_cs = 0.1
-    import math
-    def _fee_to_bits(f: float) -> int:
-        try:
-            val = float(f); commission = 0
-            if val < 0.0:
-                commission += 32768
-            else:
-                val = math.fabs(val)
-                expf = 0.0 if val == 0.0 else math.log10(val)
-                expi = int(expf + 0.5 if expf >= 0.0 else expf - 0.5)
-                if val > 0: val /= math.pow(10, expi)
-                if val >= 1.0:
-                    val *= 0.1; expi += 1
-                commission += int(1024 * (expi + 18))
-                commission += int(val * 1024)
-            return commission
-        except (ValueError, TypeError):
-            return 0
-    fee_bits = _fee_to_bits(fee_cs)
-    payload = _serialize_transfer_part(inner_id, sender, target, 0, 0, fee_bits)
+
+    pack = post("/api/SmartContract/Pack", {
+        "publicKey": SENDER_PUB_B58,
+        "target": contract_address_b58,
+        "method": "getCounter",
+        "params": [],
+        "feeAsString": str(fee_cs),
+    })
+    if not pack.get("success"):
+        raise SystemExit(f"D4 abort: Pack failed: {pack}")
+
+    packed_b58 = pack["dataResponse"]["transactionPackagedStr"]
+    inner_id = pack.get("transactionInnerId")
+    payload = base58.b58decode(packed_b58)
+    print(f"   packed bytes ({len(payload)}B), first 96B: {payload[:96].hex()}")
     sig_b58 = sign_b58(payload)
 
     resp = post("/api/SmartContract/Execute", {
@@ -243,6 +210,7 @@ def d4_execute(contract_address_b58: str) -> dict:
         "method": "getCounter",
         "params": [],
         "feeAsString": str(fee_cs),
+        "transactionInnerId": inner_id,
     })
     return resp
 
@@ -270,7 +238,11 @@ def main() -> None:
     # The Deploy response carries the new contract's address either via
     # the messageError-free path or a dedicated field; fall back to deriving
     # it via /SmartContract/ListByWallet of the deployer.
-    contract = (d3.get("dataResponse") or {}).get("smartContractResult") or d3.get("contractAddress")
+    contract = (
+        d3.get("contractAddress")
+        or (d3.get("dataResponse") or {}).get("contractAddress")
+        or (d3.get("dataResponse") or {}).get("smartContractResult")
+    )
     if not contract:
         time.sleep(3)
         listed = post("/api/SmartContract/ListByWallet",
