@@ -43,3 +43,17 @@ def test_tokens_transfers_get():
     inp = TokensTransfersGetInput(token="TokB58", offset=0, limit=10)
     out = asyncio.run(_transfers_get_impl(c, inp))
     assert out["success"] is True
+
+
+from baba_mcp.tools.tokens import TokensHoldersGetInput, _holders_get_impl
+
+def test_tokens_holders_get_with_order():
+    seen = {}
+    def handler(req):
+        seen["body"] = req.content
+        return httpx.Response(200, json={"holders": [], "success": True, "message": None})
+    c = make_client(handler)
+    inp = TokensHoldersGetInput(token="TokB58", offset=0, limit=10, order=0, desc=True)
+    out = asyncio.run(_holders_get_impl(c, inp))
+    assert b'"order": 0' in seen["body"]
+    assert b'"desc": true' in seen["body"]
