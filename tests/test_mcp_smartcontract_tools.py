@@ -124,3 +124,16 @@ def test_smartcontract_methods_by_bytecode():
     out = asyncio.run(_methods_impl(c, SmartContractMethodsInput(
         byte_code_objects=[{"name": "C", "byteCode": "AAA="}])))
     assert b'"byteCodeObjects"' in seen["body"]
+
+
+from baba_mcp.tools.smartcontract import SmartContractStateInput, _state_impl
+
+def test_smartcontract_state():
+    def handler(req):
+        return httpx.Response(200, json={
+            "fields": [{"name": "counter", "type": "long", "value": 4}],
+            "success": True, "message": None,
+        })
+    c = make_client(handler)
+    out = asyncio.run(_state_impl(c, SmartContractStateInput(address="FwdrHR...")))
+    assert out["fields"][0]["value"] == 4
