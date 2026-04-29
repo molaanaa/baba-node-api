@@ -67,3 +67,22 @@ def test_wait_for_block_returns_hash_and_changed_flag():
     out = asyncio.run(_wait_for_block_impl(c, MonitorWaitForBlockInput(timeoutMs=30000)))
     assert out["changed"] is True
     assert "blockHash" in out
+
+
+from baba_mcp.tools.monitor import (
+    MonitorWaitForSmartTransactionInput, _wait_for_smart_transaction_impl,
+)
+
+def test_wait_for_smart_transaction_passes_address_and_timeout():
+    seen = {}
+    def handler(req):
+        seen["body"] = req.content
+        return httpx.Response(200, json={
+            "transactionId": "12345.1", "found": True, "success": True,
+        })
+    c = make_client(handler)
+    inp = MonitorWaitForSmartTransactionInput(address="ContractB58", timeoutMs=20000)
+    out = asyncio.run(_wait_for_smart_transaction_impl(c, inp))
+    assert b'"address": "ContractB58"' in seen["body"]
+    assert b'"timeoutMs": 20000' in seen["body"]
+    assert out["found"] is True

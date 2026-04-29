@@ -41,6 +41,11 @@ class MonitorWaitForBlockInput(_Base):
     )
 
 
+class MonitorWaitForSmartTransactionInput(_Base):
+    address: str
+    timeout_ms: int = Field(alias="timeoutMs", ge=0, le=60000, default=30000)
+
+
 # ---------- Implementations (testabili in isolamento) ----------
 
 async def _get_balance_impl(client, inp: MonitorGetBalanceInput) -> Mapping[str, Any]:
@@ -61,6 +66,10 @@ async def _get_estimated_fee_impl(client, inp: MonitorGetEstimatedFeeInput) -> M
 
 async def _wait_for_block_impl(client, inp: MonitorWaitForBlockInput) -> Mapping[str, Any]:
     return await call_gateway(client, "/api/Monitor/WaitForBlock", inp)
+
+
+async def _wait_for_smart_transaction_impl(client, inp: MonitorWaitForSmartTransactionInput) -> Mapping[str, Any]:
+    return await call_gateway(client, "/api/Monitor/WaitForSmartTransaction", inp)
 
 
 # ---------- Registration ----------
@@ -111,6 +120,15 @@ def register(server: Server) -> None:
                 inputSchema=MonitorWaitForBlockInput.model_json_schema(by_alias=True),
                 annotations={"readOnlyHint": True},
             ),
+            Tool(
+                name="monitor_wait_for_smart_transaction",
+                description=(
+                    "Long-poll: blocks until the next smart-contract transaction "
+                    "targeting `address` is sealed. Returns transactionId + found. Read-only."
+                ),
+                inputSchema=MonitorWaitForSmartTransactionInput.model_json_schema(by_alias=True),
+                annotations={"readOnlyHint": True},
+            ),
         ]
 
     @server.call_tool()
@@ -139,6 +157,11 @@ def register(server: Server) -> None:
         if name == "monitor_wait_for_block":
             inp = MonitorWaitForBlockInput.model_validate(arguments)
             res = await _wait_for_block_impl(client, inp)
+            import json
+            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
+        if name == "monitor_wait_for_smart_transaction":
+            inp = MonitorWaitForSmartTransactionInput.model_validate(arguments)
+            res = await _wait_for_smart_transaction_impl(client, inp)
             import json
             return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
         raise ValueError(f"Unknown tool: {name}")
