@@ -54,8 +54,12 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
 
         target_b = b""
         if require_target:
-            target_pub = get_json_val(data,
-                                      ["target", "Target", "contractAddress", "ContractAddress"], "")
+            target_pub = get_json_val(
+                data,
+                ["target", "Target", "contractAddress", "ContractAddress",
+                 "ReceiverPublicKey", "receiverPublicKey"],
+                "",
+            )
             target_b, err = _decode_address(target_pub, "target")
             if err:
                 return None, ({"success": False, "message": err[0]}, err[1])
@@ -176,7 +180,8 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
             target_b, err = _decode_address(
                 get_json_val(data,
                              ["target", "Target",
-                              "contractAddress", "ContractAddress"], ""),
+                              "contractAddress", "ContractAddress",
+                              "ReceiverPublicKey", "receiverPublicKey"], ""),
                 "target",
             )
             if err:
@@ -489,8 +494,9 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
         try:
             return _execute_smart_tx(tx, rec_fee, inner_id)
         except Exception as e:
-            log(f"SmartContract Deploy Error: {e}", is_error=True)
-            return jsonify({"success": False, "message": "SmartContract Deploy failed"}), 400
+            log(f"SmartContract Deploy Error: {type(e).__name__}: {e!r}", is_error=True)
+            return jsonify({"success": False,
+                            "message": f"SmartContract Deploy failed: {type(e).__name__}: {e}"}), 400
 
     @bp.route("/SmartContract/Execute", methods=["POST"])
     @bp.route("/api/SmartContract/Execute", methods=["POST"])
@@ -546,7 +552,8 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
         try:
             return _execute_smart_tx(tx, rec_fee, inner_id)
         except Exception as e:
-            log(f"SmartContract Execute Error: {e}", is_error=True)
-            return jsonify({"success": False, "message": "SmartContract Execute failed"}), 400
+            log(f"SmartContract Execute Error: {type(e).__name__}: {e!r}", is_error=True)
+            return jsonify({"success": False,
+                            "message": f"SmartContract Execute failed: {type(e).__name__}: {e}"}), 400
 
     return bp

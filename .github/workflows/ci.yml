@@ -34,3 +34,11 @@ jobs:
 
       - name: Byte-compile gateway and services
         run: python -m compileall gateway.py services
+
+      - name: Lint MCP package
+        if: matrix.python-version == '3.11'
+        run: python -m compileall baba_mcp/
+
+      - name: MCP unit tests
+        if: matrix.python-version == '3.11'
+        run: pytest tests/test_mcp_*.py tests/test_skill_drift.py -v
