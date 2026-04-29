@@ -460,9 +460,56 @@ pm2 start ecosystem.config.js && pm2 save
 #   baba-mcp-http  on :7000 (MCP SSE)
 ```
 
-### Local stdio (Claude Code)
+### Configure an agent
 
-Add a `.mcp.json` at the repo root:
+The MCP server exposes 29 tools (1:1 with the gateway REST endpoints) and
+ships with a [Claude Code skill](.claude/skills/baba-credits/) that teaches
+agents the canonical pipelines (transfer, deploy, execute, inspect, attach
+metadata, token operations). To plug an agent in:
+
+#### 1. Pick a transport
+
+| Transport | Best for | Endpoint |
+|---|---|---|
+| **stdio** | local agents (Claude Code, Cline, Cursor) — agent forks the process | `python3 -m baba_mcp.server` |
+| **http (SSE)** | remote agents (Claude Desktop with remote MCP, custom agents on a different host, smart wallets) | `http://<host>:7000/sse` |
+
+Use stdio when the agent runs on the same machine as the gateway. Use HTTP
+when the agent runs elsewhere (set `MCP_AUTH_TOKEN` for any non-localhost
+exposure — see Security notes below).
+
+#### 2. Provide the agent's signing material
+
+The MCP server is **non-custodial**: every write tool (`transaction_execute`,
+`smartcontract_deploy`, `smartcontract_execute`) requires an ed25519
+signature **produced by the agent** over the `transactionPackagedStr` returned
+by the corresponding `*_pack` tool. The server never sees the private key.
+
+Two patterns:
+
+**Agent with a key** (CLI agent, batch worker):
+
+```bash
+export BABA_PUBLIC_KEY=<base58 public key>
+export BABA_PRIVATE_KEY=<base58 64-byte private key>   # 32-byte seed || 32-byte pubkey
+```
+
+The agent reads these env vars and signs locally (see
+[`.claude/skills/baba-credits/signing/python-pynacl.md`](.claude/skills/baba-credits/signing/python-pynacl.md)
+for a 5-line PyNaCl helper, or
+[`.claude/skills/baba-credits/signing/typescript-tweetnacl.md`](.claude/skills/baba-credits/signing/typescript-tweetnacl.md)
+for the TypeScript/tweetnacl equivalent).
+
+**Smart wallet with embedded AI** (mobile/web, hardware-backed key):
+the wallet's keystore (Keychain, Android Keystore, hardware wallet) exposes a
+`sign(bytes) -> bytes` API that the agent calls instead of a raw private key.
+**Never pass the private key to any MCP tool or to the gateway.**
+
+#### 3. Wire the agent to the MCP
+
+##### Claude Code (stdio, project-local)
+
+Drop a `.mcp.json` at the repo root the agent runs from:
 
 ```json
 {
@@ -471,17 +518,119 @@ Add a `.mcp.json` at the repo root:
       "command": "python3",
       "args": ["-m", "baba_mcp.server"],
       "cwd": "/home/credits/baba-node-api",
-      "env": { "BABA_GATEWAY_URL": "http://127.0.0.1:5000" }
+      "env": {
+        "BABA_GATEWAY_URL": "http://127.0.0.1:5000",
+        "BABA_PUBLIC_KEY": "<wallet pub>",
+        "BABA_PRIVATE_KEY": "<wallet priv>"
+      }
     }
   }
 }
 ```
 
-### Tools
+The skill at `.claude/skills/baba-credits/SKILL.md` is auto-discovered when
+Claude Code is launched in this repo — the agent loads it on first relevant
+prompt ("send 0.5 CS to ...", "deploy this contract", etc.).
 
-29 tools total, mapping 1:1 to the REST endpoints. See the skill at
-`.claude/skills/baba-credits/` for the full catalog and recipes
-(transfer, deploy, execute, inspect, attach metadata, token operations).
+##### Claude Desktop (stdio)
+
+Edit the desktop config:
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "baba-credits": {
+      "command": "python3",
+      "args": ["-m", "baba_mcp.server"],
+      "env": {
+        "PYTHONPATH": "/path/to/baba-node-api",
+        "BABA_GATEWAY_URL": "http://127.0.0.1:5000"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop and the `baba-credits` server appears in the MCP icon.
+
+##### Cline / Cursor / generic stdio MCP client
+
+Same shape as Claude Code — point the client to `python3 -m baba_mcp.server`
+with `cwd` set to the repo root.
+
+##### HTTP/SSE for remote agents
+
+Start the server on the host running the gateway (or anywhere reachable
+from the gateway):
+
+```bash
+pm2 start ecosystem.config.js   # gateway:5000 + baba-mcp-http:7000
+```
+
+Connect the agent to `http://<host>:7000/sse`. If the host is not localhost,
+set an auth token before exposing:
+
+```bash
+export MCP_AUTH_TOKEN=$(openssl rand -hex 32)
+export MCP_HTTP_HOST=0.0.0.0
+pm2 restart baba-mcp-http --update-env
+```
+
+Front it with Nginx + TLS for production. Pass the same token in the
+`Authorization: Bearer <token>` header from the agent. See
+`.env.mcp.example` for all knobs.
+
+##### Custom Python agent (Anthropic SDK or OpenAI tool-use)
+
+```python
+from mcp.client.session import ClientSession
+from mcp.client.sse import sse_client
+
+async with sse_client("http://localhost:7000/sse") as (read, write):
+    async with ClientSession(read, write) as session:
+        await session.initialize()
+        tools = await session.list_tools()         # 29 tools available
+        result = await session.call_tool(
+            "monitor_get_balance",
+            {"PublicKey": "<wallet>"},
+        )
+```
+
+For stdio, swap `sse_client` with `mcp.client.stdio.stdio_client` and pass the
+same `python3 -m baba_mcp.server` command.
+
+#### 4. Verify the connection
+
+After wiring, ask the agent something simple to confirm the tools are
+reachable:
+
+> "What's the balance of wallet `<your pub key>`?"
+
+The agent should call `monitor_get_balance` and surface the CS balance from
+the live node. For an end-to-end write check, ask it to send 0.001 CS to a
+test wallet — it will follow `transaction_pack` → sign → `transaction_execute`
+→ `monitor_wait_for_block` and report the on-chain `transactionId`.
+
+The full repo also ships `scripts/mcp_full_smoke.py` which exercises every
+implemented tool end-to-end against a live node (run with
+`set -a; source .env.smoke; set +a; .venv/bin/python scripts/mcp_full_smoke.py`).
+
+### Tool catalogue (29 total)
+
+| Category | Count | Notable |
+|---|---|---|
+| `monitor_*`        | 6 | balance, history, fee estimation, long-poll waits |
+| `transaction_*`    | 4 | get/pack/execute/result for plain CS transfers |
+| `userfields_*`     | 2 | encode/decode of v1 metadata blobs (ArtVerse) |
+| `tokens_*`         | 5 | balances, transfers, info, holders, transactions |
+| `smartcontract_*`  | 8 | compile, pack, deploy, execute, get, methods, state, list |
+| `diag_*`           | 4 | active nodes, mempool count, node info, supply |
+
+The skill catalogue at [.claude/skills/baba-credits/tools-reference.md](.claude/skills/baba-credits/tools-reference.md)
+documents inputs/outputs/annotations for every tool.
 
 ### Example end-to-end transfer (CS, 0.001 from A → B)
 
@@ -494,10 +643,34 @@ Add a `.mcp.json` at the repo root:
 
 ### Security notes
 
-- The MCP server NEVER signs server-side (vincolo non-custodial). If you need a
+- The MCP server NEVER signs server-side (non-custodial). If you need a
   signer microservice, run a separate companion MCP — do NOT add signing here.
 - When `MCP_TRANSPORT=http` and exposed beyond localhost, set `MCP_AUTH_TOKEN`
   and front the SSE port with Nginx + TLS (see `.env.mcp.example`).
+- `BABA_PRIVATE_KEY` should live in the agent's environment only, never in
+  shell history, source code, or chat logs. Use `read -s` or a keystore.
+- Some tools (`transaction_execute`, `smartcontract_deploy`,
+  `smartcontract_execute`) write to the blockchain and consume fee. The skill
+  carries `destructiveHint: true` annotations so the agent host can prompt
+  the user for confirmation before invoking them.
+
+### Troubleshooting
+
+See [.claude/skills/baba-credits/troubleshooting.md](.claude/skills/baba-credits/troubleshooting.md)
+for the mapping of common errors (`"Transaction has wrong signature"`,
+`"Missing Data"`, `"Node Unavailable"`, etc.) to causes and fixes.
+A few node-side limitations to be aware of:
+
+- `tokens_*` tools require a Credits node that exposes the monitor API
+  (token holders/balances/transactions). A pure consensus-producer node
+  responds with `"This node doesn't provide such info"`.
+- `monitor_wait_for_block` (long-poll) requires a node that supports the
+  `WaitForBlock` Thrift call without closing the connection mid-poll.
+- `smartcontract_deploy` and `smartcontract_execute` may surface a Thrift
+  transport disconnect on some node versions even when the transaction is
+  successfully sealed; the gateway recovers automatically by polling
+  `TransactionsGet` for the sealed inner-id and returning the resulting
+  `transactionId`.
 
 ---
 
