@@ -6,7 +6,7 @@ Tools:
   monitor_wait_for_block, monitor_wait_for_smart_transaction
 """
 from __future__ import annotations
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 from pydantic import Field
 from mcp.server import Server
 from mcp.types import Tool, TextContent
@@ -21,10 +21,18 @@ class MonitorGetBalanceInput(PublicKeyInput):
     pass
 
 
+class MonitorGetWalletInfoInput(PublicKeyInput):
+    pass
+
+
 # ---------- Implementations (testabili in isolamento) ----------
 
 async def _get_balance_impl(client, inp: MonitorGetBalanceInput) -> Mapping[str, Any]:
     return await call_gateway(client, "/api/Monitor/GetBalance", inp)
+
+
+async def _get_wallet_info_impl(client, inp: MonitorGetWalletInfoInput) -> Mapping[str, Any]:
+    return await call_gateway(client, "/api/Monitor/GetWalletInfo", inp)
 
 
 # ---------- Registration ----------
@@ -42,6 +50,15 @@ def register(server: Server) -> None:
                 inputSchema=MonitorGetBalanceInput.model_json_schema(by_alias=True),
                 annotations={"readOnlyHint": True},
             ),
+            Tool(
+                name="monitor_get_wallet_info",
+                description=(
+                    "Read full wallet data: balance + lastTransactionId + delegations "
+                    "(incoming/outgoing totals + donors/recipients lists). Read-only."
+                ),
+                inputSchema=MonitorGetWalletInfoInput.model_json_schema(by_alias=True),
+                annotations={"readOnlyHint": True},
+            ),
         ]
 
     @server.call_tool()
@@ -50,6 +67,11 @@ def register(server: Server) -> None:
         if name == "monitor_get_balance":
             inp = MonitorGetBalanceInput.model_validate(arguments)
             res = await _get_balance_impl(client, inp)
+            import json
+            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
+        if name == "monitor_get_wallet_info":
+            inp = MonitorGetWalletInfoInput.model_validate(arguments)
+            res = await _get_wallet_info_impl(client, inp)
             import json
             return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
         raise ValueError(f"Unknown tool: {name}")
