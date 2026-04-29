@@ -25,6 +25,10 @@ class MonitorGetWalletInfoInput(PublicKeyInput):
     pass
 
 
+class MonitorGetTransactionsByWalletInput(PaginatedInput):
+    pass
+
+
 # ---------- Implementations (testabili in isolamento) ----------
 
 async def _get_balance_impl(client, inp: MonitorGetBalanceInput) -> Mapping[str, Any]:
@@ -33,6 +37,10 @@ async def _get_balance_impl(client, inp: MonitorGetBalanceInput) -> Mapping[str,
 
 async def _get_wallet_info_impl(client, inp: MonitorGetWalletInfoInput) -> Mapping[str, Any]:
     return await call_gateway(client, "/api/Monitor/GetWalletInfo", inp)
+
+
+async def _get_transactions_by_wallet_impl(client, inp: MonitorGetTransactionsByWalletInput) -> Mapping[str, Any]:
+    return await call_gateway(client, "/api/Monitor/GetTransactionsByWallet", inp)
 
 
 # ---------- Registration ----------
@@ -59,6 +67,15 @@ def register(server: Server) -> None:
                 inputSchema=MonitorGetWalletInfoInput.model_json_schema(by_alias=True),
                 annotations={"readOnlyHint": True},
             ),
+            Tool(
+                name="monitor_get_transactions_by_wallet",
+                description=(
+                    "Paginated transaction history for a wallet. Returns id, sum, fee, "
+                    "from/to, time, status, currency. Default page size 10, max 500. Read-only."
+                ),
+                inputSchema=MonitorGetTransactionsByWalletInput.model_json_schema(by_alias=True),
+                annotations={"readOnlyHint": True},
+            ),
         ]
 
     @server.call_tool()
@@ -72,6 +89,11 @@ def register(server: Server) -> None:
         if name == "monitor_get_wallet_info":
             inp = MonitorGetWalletInfoInput.model_validate(arguments)
             res = await _get_wallet_info_impl(client, inp)
+            import json
+            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
+        if name == "monitor_get_transactions_by_wallet":
+            inp = MonitorGetTransactionsByWalletInput.model_validate(arguments)
+            res = await _get_transactions_by_wallet_impl(client, inp)
             import json
             return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
         raise ValueError(f"Unknown tool: {name}")

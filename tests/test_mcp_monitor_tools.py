@@ -3,6 +3,9 @@ from baba_mcp.client import GatewayClient
 from baba_mcp.tools.monitor import (
     MonitorGetWalletInfoInput, _get_wallet_info_impl,
 )
+from baba_mcp.tools.monitor import (
+    MonitorGetTransactionsByWalletInput, _get_transactions_by_wallet_impl,
+)
 
 
 def make_client(handler):
@@ -26,3 +29,16 @@ def test_get_wallet_info_full_response():
     out = asyncio.run(_get_wallet_info_impl(c, MonitorGetWalletInfoInput(public_key="x")))
     assert out["balance"] == "100.0"
     assert out["lastTransaction"] == 42
+
+
+def test_get_transactions_by_wallet_passes_pagination():
+    seen = {}
+    def handler(req):
+        seen["body"] = req.content
+        return httpx.Response(200, json={"message": None, "success": True, "transactions": []})
+    c = make_client(handler)
+    inp = MonitorGetTransactionsByWalletInput(public_key="x", offset=10, limit=20)
+    out = asyncio.run(_get_transactions_by_wallet_impl(c, inp))
+    assert b'"offset": 10' in seen["body"]
+    assert b'"limit": 20' in seen["body"]
+    assert out["success"] is True
