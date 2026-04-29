@@ -1,0 +1,44 @@
+{
+  "endpoint": "/api/SmartContract/Get",
+  "method": "POST",
+  "description": "Look up a deployed smart contract by address. Returns sourceCode, byteCodeObjects, deployer, transactionsCount and createTime.",
+  "request": {
+    "address": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3"
+  },
+  "response_success": {
+    "success": true,
+    "message": "Success: ",
+    "contract": {
+      "address": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3",
+      "deployer": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+      "sourceCode": "import com.credits.scapi.v0.SmartContract;\n\npublic class BasicCounter extends SmartContract { ... }",
+      "byteCodeObjects": [
+        {
+          "name": "BasicCounter",
+          "byteCode": "yv66vgAAADcAGAoABAAUCQADABUHABYHABcBAAdjb3VudGVy..."
+        }
+      ],
+      "transactionId": null,
+      "createTime": 1777375244830,
+      "transactionsCount": 4
+    }
+  },
+  "response_error_not_a_contract": {
+    "success": false,
+    "message": "Failure: ",
+    "contract": {
+      "address": null,
+      "deployer": null,
+      "sourceCode": null,
+      "byteCodeObjects": [],
+      "transactionId": null,
+      "createTime": null,
+      "transactionsCount": null
+    }
+  },
+  "response_error_invalid_address": {
+    "success": false,
+    "message": "address is not valid base58"
+  },
+  "notes": "Aliases: 'Address' is also accepted. transactionsCount is the number of execute calls registered against the contract since deploy. The byteCode field is base64. Pass it back to /SmartContract/Methods (byteCodeObjects mode) to enumerate the available methods."
+}

@@ -1,0 +1,26 @@
+{
+  "endpoint": "/api/SmartContract/Compile",
+  "method": "POST",
+  "description": "Compile a Java smart contract source through the node's executor service. Returns the compiled byteCodeObjects (one per top-level class) ready to be passed to /SmartContract/Pack and /SmartContract/Deploy.",
+  "request": {
+    "sourceCode": "import com.credits.scapi.v0.SmartContract;\n\npublic class BasicCounter extends SmartContract {\n    private int counter;\n    public BasicCounter() { super(); counter = 0; }\n    public void increment() { counter += 1; }\n    public void setCounter(int value) { counter = value; }\n    public int getCounter() { return counter; }\n}\n"
+  },
+  "response_success": {
+    "success": true,
+    "message": "Success: ",
+    "byteCodeObjects": [
+      {
+        "name": "BasicCounter",
+        "byteCode": "yv66vgAAADcAGAoABAAUCQADABUHABYHABcBAAdjb3VudGVyAQABSQEABjxpbml0PgEAAygpVgEABENvZGUBAA9MaW5lTnVtYmVyVGFibGUBAAlpbmNyZW1lbnQBAApzZXRDb3VudGVyAQAEKEkpVgEAEE1ldGhvZFBhcmFtZXRlcnMBAAV2YWx1ZQEACmdldENvdW50ZXIBAAMoKUkBAApTb3VyY2VGaWxlAQARQmFzaWNDb3VudGVyLmphdmEMAAcACAwABQAGAQAMQmFzaWNDb3VudGVyAQAiY29tL2NyZWRpdHMvc2NhcGkvdjAvU21hcnRDb250cmFjdAAhAAMABAAAAAEAAgAFAAYAAAAEAAEABwAIAAEACQAAACoAAgABAAAACiq3AAEqA7UAArEAAAABAAoAAAAOAAMAAAAHAAQACAAJAAkAAQALAAgAAQAJAAAAJwADAAEAAAALKlm0AAIEYLUAArEAAAABAAoAAAAKAAIAAAAMAAoADQABAAwADQACAAkAAAAiAAIAAgAAAAYqG7UAArEAAAABAAoAAAAKAAIAAAAQAAEAEQABABIAEwABAAkAAAAdAAEAAQAAAAUqtAACrAAAAAEACgAAAAYAAQAAABYAAQAUAAAAAgAV"
+      }
+    ],
+    "tokenStandard": 0
+  },
+  "response_error_internal": {
+    "success": false,
+    "message": "Internal error processing compileSourceCode",
+    "byteCodeObjects": [],
+    "tokenStandard": 0
+  },
+  "notes": "The sourceCode MUST include 'import com.credits.scapi.v0.SmartContract;' (and any other Credits SDK base class actually used). Without it the executor returns 'Internal error processing compileSourceCode'. The endpoint timeout is 120s; complex sources may take 10–60s."
+}

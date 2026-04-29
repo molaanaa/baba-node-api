@@ -1,0 +1,28 @@
+{
+  "endpoint": "/api/Monitor/WaitForSmartTransaction",
+  "method": "POST",
+  "description": "Long-poll for the next smart contract transaction touching the given address. Returns the next TransactionId formatted as poolSeq.idx1.",
+  "request": {
+    "publicKey": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3",
+    "timeoutMs": 60000
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "transactionId": "174621645.1"
+  },
+  "response_no_tx_yet": {
+    "success": true,
+    "message": null,
+    "transactionId": null
+  },
+  "response_error_timeout": {
+    "success": false,
+    "message": "WaitForSmartTransaction failed"
+  },
+  "response_error_invalid": {
+    "success": false,
+    "message": "publicKey is not valid base58"
+  },
+  "notes": "publicKey is the contract address (or wallet, for Wait-on-wallet). Use this in parallel with /SmartContract/Execute to get an immediate confirmation of the broadcast tx. Aliases: 'PublicKey', 'smartContract', 'SmartContract'."
+}

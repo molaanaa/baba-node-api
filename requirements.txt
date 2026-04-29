@@ -6,3 +6,9 @@ gevent==22.10.2
 python-dotenv==1.0.0
 Flask-Limiter==3.3.1
 redis==4.5.4
+# MCP server dependencies (baba_mcp/) — require Python >= 3.10.
+# The gateway itself runs fine on Python 3.8; the markers below let pip skip
+# these on older interpreters so the gateway-only CI matrix stays green.
+mcp>=1.0.0; python_version >= "3.10"
+httpx>=0.27.0; python_version >= "3.10"
+pydantic>=2.5.0; python_version >= "3.10"

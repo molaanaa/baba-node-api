@@ -29,8 +29,17 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements-dev.txt
 
-      - name: Run pytest
+      - name: Run pytest (gateway-only on Python < 3.10)
+        if: matrix.python-version != '3.11'
+        run: pytest tests/ -v --ignore-glob='tests/test_mcp_*.py' --ignore=tests/test_skill_drift.py
+
+      - name: Run pytest (full suite on Python 3.11)
+        if: matrix.python-version == '3.11'
         run: pytest tests/ -v
 
       - name: Byte-compile gateway and services
         run: python -m compileall gateway.py services
+
+      - name: Lint MCP package
+        if: matrix.python-version == '3.11'
+        run: python -m compileall baba_mcp/

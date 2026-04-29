@@ -1,0 +1,37 @@
+{
+  "endpoint": "/api/SmartContract/ListByWallet",
+  "method": "POST",
+  "description": "Paged list of contracts deployed by the given wallet (SmartContractsListGet).",
+  "request": {
+    "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+    "offset": 0,
+    "limit": 50
+  },
+  "response_success": {
+    "success": true,
+    "message": "Success: ",
+    "contracts": [
+      {
+        "address": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3",
+        "deployer": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+        "sourceCode": "import com.credits.scapi.v0.SmartContract;\n\npublic class BasicCounter extends SmartContract { ... }",
+        "byteCodeObjects": [
+          { "name": "BasicCounter", "byteCode": "yv66vgAAADcAGA..." }
+        ],
+        "transactionId": null,
+        "createTime": 1777375244830,
+        "transactionsCount": 4
+      }
+    ]
+  },
+  "response_no_contracts": {
+    "success": false,
+    "message": "Not found: ",
+    "contracts": []
+  },
+  "response_error": {
+    "success": false,
+    "message": "publicKey is not valid base58"
+  },
+  "notes": "When the wallet has not deployed any contract the node returns 'Not found: ' and contracts=[]. Aliases: 'PublicKey', 'Offset', 'Limit'."
+}

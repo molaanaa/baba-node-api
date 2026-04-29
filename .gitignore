@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .env
 .env.local
+.env.smoke
+*.smoke.log
 *.egg-info/
 gen-py/
 .venv/

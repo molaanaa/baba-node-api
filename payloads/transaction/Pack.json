@@ -1,0 +1,34 @@
+{
+  "endpoint": "/api/Transaction/Pack",
+  "method": "POST",
+  "description": "Build the canonical bytes-to-sign for a normal CS transfer. The gateway resolves the next inner_id from the node and the recommended fee; the client signs the returned 'transactionPackagedStr' offline (ed25519, 64-byte signature) and submits it via /Transaction/Execute.",
+  "request": {
+    "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+    "receiverPublicKey": "GMpvxbByQgi7Zmx3DcFi2PKUByoGMAY2kASDUZpdEo5M",
+    "amountAsString": "0.001",
+    "feeAsString": "0",
+    "userData": ""
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "dataResponse": {
+      "transactionPackagedStr": "5eVjtFQwpvWEcdbAbETpPnXauZ6E7DoG6KSRhcgxXxYratKyaySeFdXpoiyCDai65HC9d4q9yEvgaR78V3VygYGqQ5qBNc8eygn5gGLqoqvaRTPcwsamqh",
+      "recommendedFee": 0.008740234375000001,
+      "actualSum": 0,
+      "publicKey": null,
+      "smartContractResult": null
+    },
+    "actualFee": 0,
+    "actualSum": 0,
+    "amount": 0,
+    "blockId": 0,
+    "transactionId": null,
+    "transactionInnerId": null
+  },
+  "response_error": {
+    "success": false,
+    "message": "Missing Keys"
+  },
+  "notes": "feeAsString = '0' means 'use the recommended fee'. The client typically signs base58.b58decode(transactionPackagedStr) with ed25519, then includes the base58 signature in /Transaction/Execute. Set 'userData' to a base58-encoded payload (e.g. ArtVerse userFields v1) to attach metadata."
+}

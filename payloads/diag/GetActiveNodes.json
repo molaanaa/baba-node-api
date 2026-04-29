@@ -1,0 +1,36 @@
+{
+  "endpoint": "/api/Diag/GetActiveNodes",
+  "method": "POST",
+  "description": "Returns the list of active nodes seen by the queried node (API_DIAG.GetActiveNodes).",
+  "request": {},
+  "response_success": {
+    "success": true,
+    "message": null,
+    "count": 42,
+    "nodes": [
+      {
+        "ip": "192.0.2.10",
+        "key": "AoBfLKkPLxkvs36LefLn3wUtfcJ2iHjUaDF7LYJVpE42",
+        "version": "532",
+        "lastBlock": null,
+        "trustLevel": null
+      },
+      {
+        "ip": "192.0.2.11",
+        "key": "6ZW39KmRu5RYrNrtP47N2qCp3YKEZg9SmXAeatZnPA2g",
+        "version": "532",
+        "lastBlock": null,
+        "trustLevel": null
+      }
+    ]
+  },
+  "response_error_no_diag_service": {
+    "success": false,
+    "message": "Diag service Unavailable"
+  },
+  "response_error_wrong_port": {
+    "success": false,
+    "message": "GetActiveNodes failed"
+  },
+  "notes": "Requires NODE_DIAG_PORT pointing at the node's API_DIAG socket (commonly 9088 — see [api] diag_port in csnode/config.ini). 'Invalid method name' from the node typically means the wrong port. 'Diag service Unavailable' (503) means the apidiag generated module is missing."
+}

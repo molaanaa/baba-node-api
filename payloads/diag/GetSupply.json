@@ -1,0 +1,18 @@
+{
+  "endpoint": "/api/Diag/GetSupply",
+  "method": "POST",
+  "description": "Current CS supply: initial, mined, currentSupply (and circulating/burned where the node exposes them).",
+  "request": {},
+  "response_success": {
+    "success": true,
+    "message": null,
+    "currentSupply": "285789378.611778939217801619",
+    "initial": null,
+    "mined": null
+  },
+  "response_error": {
+    "success": false,
+    "message": "GetSupply failed"
+  },
+  "notes": "Amount fields are strings (full Decimal) to avoid IEEE-754 truncation: 'integral.fraction' formatted with 18 fractional digits. Some builds only populate 'currentSupply' and leave the rest null."
+}

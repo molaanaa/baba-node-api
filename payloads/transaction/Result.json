@@ -1,0 +1,37 @@
+{
+  "endpoint": "/api/Transaction/Result",
+  "method": "POST",
+  "description": "Fetch the executor return value of a previously broadcast smart contract Execute. Maps the node's TransactionResultGet → a JSON-friendly value. Variant types decoded: scalar primitives, v_string, v_byte_array (base64), v_amount {integral,fraction}, v_array/v_list/v_set/v_map.",
+  "request": {
+    "transactionId": "174621645.1"
+  },
+  "response_success_int_return": {
+    "success": true,
+    "message": null,
+    "found": true,
+    "result": 0,
+    "executor": null
+  },
+  "response_success_string_return": {
+    "success": true,
+    "message": null,
+    "found": true,
+    "result": "hello",
+    "executor": null
+  },
+  "response_success_void_return": {
+    "success": true,
+    "message": null,
+    "found": true,
+    "result": null,
+    "executor": null
+  },
+  "response_error_not_found": {
+    "success": false,
+    "message": "not found",
+    "found": false,
+    "result": null,
+    "executor": null
+  },
+  "notes": "For getCounter() returning int the result is an integer. For methods returning byte[] the result is base64. For methods returning java.math.BigDecimal-style amounts, the result is {integral, fraction}. Methods returning void give null."
+}

@@ -1,0 +1,34 @@
+{
+  "endpoint": "/api/UserFields/Encode",
+  "method": "POST",
+  "description": "Encode an ArtVerse userFields v1 metadata payload into the canonical TLV byte stream, returned as base58. Pure-local helper — no node call. The returned 'userData' can be embedded in any Credits transaction (e.g. /Transaction/Pack 'userData', /SmartContract/Deploy 'userData').",
+  "request_full": {
+    "contentHashAlgo": "sha-256",
+    "contentHash": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+    "contentCid": "bafybeigdyrabc",
+    "demoCid": "bafybeidemobcd",
+    "mime": "image/png",
+    "sizeBytes": 1234567,
+    "contractAddress": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3"
+  },
+  "request_minimal": {
+    "mime": "image/png",
+    "sizeBytes": 1234567
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "userData": "BEnKE2jn3kaM8msTaRVk6acQd2vWWffB7H3z3jScuZALxUQf3yqp6S8GniYUg6xr2jRaE3QQG2pkdPtmzVKtcYshP3HBb79jnJuxuMN13KbXCpFPHKCMj28pQBY",
+    "sizeBytes": 90,
+    "version": 1
+  },
+  "response_error_invalid_hex": {
+    "success": false,
+    "message": "contentHash is not valid hex"
+  },
+  "response_error_too_large": {
+    "success": false,
+    "message": "contentCid value is too large (max 65535 bytes)"
+  },
+  "notes": "All fields are optional — empty/missing values are skipped. contentHash is hex on the JSON layer (becomes raw bytes in the TLV). sizeBytes is a uint64 (max 2^64-1). contractAddress is base58. The wire format is documented in the project README under 'UserFields v1 wire format'."
+}

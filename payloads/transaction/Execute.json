@@ -1,0 +1,39 @@
+{
+  "endpoint": "/api/Transaction/Execute",
+  "method": "POST",
+  "description": "Broadcast a signed CS transfer. The signature must be the ed25519 signature (base58) of the bytes returned by /Transaction/Pack for the same parameters.",
+  "request": {
+    "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+    "receiverPublicKey": "GMpvxbByQgi7Zmx3DcFi2PKUByoGMAY2kASDUZpdEo5M",
+    "amountAsString": "0.001",
+    "feeAsString": "0",
+    "signature": "2K7rNrFCci1YKwsGpYTNn4HWZTX5E2RLe8fbrJPhxkTZDdiRGDvsf5TVUBn8TEbBYXHcH6UWHi2Xw59dUJWuj1ni",
+    "userData": ""
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "messageError": null,
+    "transactionId": "174621611.1",
+    "transactionInnerId": 198,
+    "actualFee": "0.008740234375",
+    "actualSum": "0.001",
+    "amount": "0.001",
+    "blockId": 0,
+    "dataResponse": {
+      "actualSum": 0,
+      "publicKey": null,
+      "recommendedFee": 0.008740234375000001,
+      "smartContractResult": null,
+      "transactionPackagedStr": null
+    }
+  },
+  "response_error_wrong_signature": {
+    "success": false,
+    "message": null,
+    "messageError": "Transaction has wrong signature.",
+    "transactionId": "0.1",
+    "transactionInnerId": 198
+  },
+  "notes": "transactionId of '0.1' (poolSeq=0) means the node rejected the tx pre-broadcast — typically wrong signature, insufficient max fee, or stale inner_id. NO fee is consumed in that case. Aliases accepted: 'PublicKey', 'TransactionSignature', 'Amount', 'Fee', 'UserData', 'ReceiverPublicKey'."
+}

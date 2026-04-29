@@ -1,0 +1,35 @@
+{
+  "endpoint": "/api/Monitor/WaitForBlock",
+  "method": "POST",
+  "description": "Long-poll for the next block sealed after 'obsoleteHash'. Maps to PoolHash WaitForBlock(PoolHash obsolete). Returns the next pool's hash (base58) plus a 'changed' flag.",
+  "request_with_anchor": {
+    "obsoleteHash": "8mSphx4u1ghDuSMpvvkpzGS84yeAy3XpBUUQzAAMeQEw",
+    "timeoutMs": 30000
+  },
+  "request_anchor_at_head": {
+    "timeoutMs": 30000
+  },
+  "response_success_new_block": {
+    "success": true,
+    "message": null,
+    "hash": "GiCsXW1uxBNjTeHSMohTHH6BVCNqeputNUPC83KBs1jU",
+    "obsoleteHash": "8mSphx4u1ghDuSMpvvkpzGS84yeAy3XpBUUQzAAMeQEw",
+    "changed": true
+  },
+  "response_success_same_block": {
+    "success": true,
+    "message": null,
+    "hash": "8mSphx4u1ghDuSMpvvkpzGS84yeAy3XpBUUQzAAMeQEw",
+    "obsoleteHash": "8mSphx4u1ghDuSMpvvkpzGS84yeAy3XpBUUQzAAMeQEw",
+    "changed": false
+  },
+  "response_error_timeout": {
+    "success": false,
+    "message": "WaitForBlock failed"
+  },
+  "response_error_invalid_hash": {
+    "success": false,
+    "message": "obsoleteHash is not valid base58"
+  },
+  "notes": "If 'obsoleteHash' is omitted, the gateway calls GetLastHash() first so the call returns at the next sealed block (instead of returning immediately). 'timeoutMs' is clamped to WAIT_MAX_TIMEOUT_MS (default 120000); the underlying socket waits 5s longer. Aliases: 'ObsoleteHash', 'hash', 'Hash'."
+}

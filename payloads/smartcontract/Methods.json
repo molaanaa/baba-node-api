@@ -1,0 +1,44 @@
+{
+  "endpoint": "/api/SmartContract/Methods",
+  "method": "POST",
+  "description": "Enumerate the public methods of a smart contract. Two input modes: pass 'address' to introspect a deployed contract (ContractMethodsGet), or pass 'byteCodeObjects' to introspect freshly compiled bytecode before deploy (ContractAllMethodsGet).",
+  "request_by_address": {
+    "address": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3"
+  },
+  "request_by_bytecode": {
+    "byteCodeObjects": [
+      {
+        "name": "BasicCounter",
+        "byteCode": "yv66vgAAADcAGAoABAAUCQADABUHABYHABcBAAdjb3VudGVy..."
+      }
+    ]
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "methods": [
+      {
+        "name": "increment",
+        "returnType": "void",
+        "arguments": []
+      },
+      {
+        "name": "setCounter",
+        "returnType": "void",
+        "arguments": [
+          { "name": "value", "type": "int" }
+        ]
+      },
+      {
+        "name": "getCounter",
+        "returnType": "int",
+        "arguments": []
+      }
+    ]
+  },
+  "response_error": {
+    "success": false,
+    "message": "Provide either 'address' or 'byteCodeObjects'"
+  },
+  "notes": "ContractMethodsGet may return an empty methods list for contracts the executor doesn't have cached — in that case pass byteCodeObjects (recoverable from /SmartContract/Get) to fall back to ContractAllMethodsGet."
+}

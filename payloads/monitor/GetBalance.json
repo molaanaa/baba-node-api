@@ -1,0 +1,21 @@
+{
+  "endpoint": "/api/Monitor/GetBalance",
+  "method": "POST",
+  "description": "Returns balance, delegated-in/out, and the list of token balances (when the node supports it). Lighter than GetWalletInfo.",
+  "request": {
+    "publicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw"
+  },
+  "response_success": {
+    "success": true,
+    "message": "Tokens not supported",
+    "balance": 99.81941709869874,
+    "delegatedIn": 59310.01748046875,
+    "delegatedOut": 0,
+    "tokens": []
+  },
+  "response_error": {
+    "success": false,
+    "message": "publicKey is not valid base58"
+  },
+  "notes": "When the node lacks the token API, 'message' is set to 'Tokens not supported' and 'tokens' is empty — success is still true since the balance lookup itself works."
+}

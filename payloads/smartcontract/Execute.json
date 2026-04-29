@@ -1,0 +1,56 @@
+{
+  "endpoint": "/api/SmartContract/Execute",
+  "method": "POST",
+  "description": "Broadcast a signed Execute (method invocation) transaction. Requires the signature obtained by signing the bytes from /SmartContract/Pack with method+params, plus the same target/method/params and transactionInnerId.",
+  "request_no_args": {
+    "PublicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+    "TransactionSignature": "<base58 ed25519 signature>",
+    "target": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3",
+    "method": "getCounter",
+    "params": [],
+    "feeAsString": "0.1",
+    "transactionInnerId": 200,
+    "forgetNewState": false
+  },
+  "request_with_args": {
+    "PublicKey": "3EDCyBgXoD4i35wYAf71vh3nqCDtVASmD2qDB7TgGpVw",
+    "TransactionSignature": "<base58 ed25519 signature>",
+    "target": "FwdrHR4wXYASs4hPLieiRV6M68TXetbZTWC34pquYnC3",
+    "method": "setCounter",
+    "params": [
+      { "K_TYPE": "INT", "V_INT": 42 }
+    ],
+    "feeAsString": "0.1",
+    "transactionInnerId": 201
+  },
+  "response_success": {
+    "success": true,
+    "message": null,
+    "messageError": null,
+    "transactionId": "174621645.1",
+    "transactionInnerId": 200,
+    "actualFee": "0.018",
+    "actualSum": "0.0",
+    "amount": "0.0",
+    "blockId": 0,
+    "dataResponse": {
+      "actualSum": 0,
+      "publicKey": null,
+      "recommendedFee": 0.008740234375000001,
+      "smartContractResult": null,
+      "transactionPackagedStr": null
+    }
+  },
+  "response_error_wrong_signature": {
+    "success": false,
+    "message": null,
+    "messageError": "Transaction has wrong signature.",
+    "transactionId": "0.1",
+    "transactionInnerId": 200
+  },
+  "response_error_missing_method": {
+    "success": false,
+    "message": "Missing method"
+  },
+  "notes": "After a successful Execute, fetch the return value via /Transaction/Result with the returned transactionId. If 'forgetNewState' is true the executor will not persist any state mutation (useful for read-only queries). Method parameters use the Credits Variant encoding {K_TYPE: <type>, V_<TYPE>: <value>} — supported K_TYPE: INT, LONG, SHORT, BYTE, BOOLEAN, FLOAT, DOUBLE, STRING. Aliases: 'PublicKey'/'publicKey', 'TransactionSignature'/'signature', 'Target'/'target'/'contractAddress', 'Method'/'method', 'Params'/'params', 'ForgetNewState'/'forgetNewState', 'TransactionInnerId'/'innerId'."
+}

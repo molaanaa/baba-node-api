@@ -1,0 +1,34 @@
+{
+  "endpoint": "/api/Tokens/Info",
+  "method": "POST",
+  "description": "Token metadata (TokenInfoGet): name, symbol, decimal, total supply, owner, frozen flag.",
+  "request": {
+    "token": "12DHXQ8rzYUawD6VSD6WuVaTQ4uen7fStWsTmZASnDv1"
+  },
+  "response_success": {
+    "success": true,
+    "message": "Success: ",
+    "info": {
+      "address": "12DHXQ8rzYUawD6VSD6WuVaTQ4uen7fStWsTmZASnDv1",
+      "name": "SERGE",
+      "symbol": "SRG",
+      "decimal": 2,
+      "totalSupply": "1000000.00",
+      "owner": "EoPibFsGPE4xqXH2tYTBQUeJqSMMFvCZUdqAW9Bnh3nd",
+      "transfersCount": 164,
+      "transactionsCount": 200,
+      "holdersCount": 12,
+      "frozen": false
+    }
+  },
+  "response_error_not_a_token": {
+    "success": false,
+    "message": "Failure: ",
+    "info": null
+  },
+  "response_error_invalid": {
+    "success": false,
+    "message": "token is not valid base58"
+  },
+  "notes": "If the address is not a token contract, the node returns 'Failure: ' and info is null. Aliases: 'Token'."
+}
