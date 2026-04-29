@@ -61,3 +61,35 @@ def test_pack_returns_packaged_str():
     assert out["dataResponse"]["transactionPackagedStr"] == "Pack58..."
     assert b'"PublicKey": "A"' in seen["body"]
     assert b'"ReceiverPublicKey": "B"' in seen["body"]
+
+from baba_mcp.tools.transaction import TransactionExecuteInput, _execute_impl
+
+def test_execute_requires_signature():
+    import pydantic
+    with pytest.raises(pydantic.ValidationError):
+        TransactionExecuteInput(public_key="A", receiver_public_key="B")  # no sig
+
+def test_execute_happy_path():
+    seen = {}
+    def handler(req):
+        seen["body"] = req.content
+        return httpx.Response(200, json={
+            "amount": "0.001", "dataResponse": {"actualSum": 0, "publicKey": None,
+                "recommendedFee": 0.00874, "smartContractResult": None,
+                "transactionPackagedStr": None},
+            "actualSum": "0.001", "actualFee": "0.00874", "extraFee": None,
+            "flowResult": None, "listItem": [], "listTransactionInfo": None,
+            "message": None, "messageError": None, "success": True,
+            "transactionId": "174575023.1", "transactionInfo": None,
+            "transactionInnerId": 13, "blockId": 0,
+        })
+    c = make_client(handler)
+    inp = TransactionExecuteInput(
+        public_key="A", receiver_public_key="B",
+        amount_as_string="0.001", fee_as_string="0",
+        transaction_signature="Sig58...",
+    )
+    out = asyncio.run(_execute_impl(c, inp))
+    assert out["success"] is True
+    assert out["transactionId"] == "174575023.1"
+    assert b'"TransactionSignature": "Sig58..."' in seen["body"]

@@ -26,9 +26,18 @@ async def _pack_impl(client, inp):
     return await call_gateway(client, "/api/Transaction/Pack", inp)
 
 
+class TransactionExecuteInput(TransferIntent):
+    transaction_signature: str = Field(alias="TransactionSignature", min_length=1)
+
+
+async def _execute_impl(client, inp):
+    return await call_gateway(client, "/api/Transaction/Execute", inp)
+
+
 _DISPATCH: dict = {
     "transaction_get_info": (TransactionGetInfoInput, _get_info_impl),
     "transaction_pack": (TransactionPackInput, _pack_impl),
+    "transaction_execute": (TransactionExecuteInput, _execute_impl),
 }
 
 _TOOL_DEFS = [
@@ -53,6 +62,20 @@ _TOOL_DEFS = [
         ),
         inputSchema=TransactionPackInput.model_json_schema(by_alias=True),
         annotations={"idempotentHint": True},
+    ),
+    Tool(
+        name="transaction_execute",
+        description=(
+            "Submit a signed CS transfer to the Credits node. Requires "
+            "TransactionSignature (base58 ed25519 signature of the packagedStr "
+            "produced by transaction_pack). The same PublicKey/ReceiverPublicKey/"
+            "amountAsString/feeAsString/UserData passed to transaction_pack must be "
+            "passed here unchanged, otherwise the inner_id rebuilt server-side will "
+            "not match and the node will reject with 'Transaction has wrong "
+            "signature.'. Writes to the blockchain — costs fee."
+        ),
+        inputSchema=TransactionExecuteInput.model_json_schema(by_alias=True),
+        annotations={"destructiveHint": True},
     ),
 ]
 
