@@ -57,3 +57,14 @@ def test_tokens_holders_get_with_order():
     out = asyncio.run(_holders_get_impl(c, inp))
     assert b'"order": 0' in seen["body"]
     assert b'"desc": true' in seen["body"]
+
+
+from baba_mcp.tools.tokens import TokensTransactionsGetInput, _transactions_get_impl
+
+def test_tokens_transactions_get():
+    def handler(req):
+        return httpx.Response(200, json={"transactions": [], "success": True, "message": None})
+    c = make_client(handler)
+    inp = TokensTransactionsGetInput(token="TokB58", offset=0, limit=10)
+    out = asyncio.run(_transactions_get_impl(c, inp))
+    assert out["success"] is True
