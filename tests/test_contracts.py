@@ -61,8 +61,7 @@ class StubTypes:
             self.signature = b""
             self.userFields = b""
             self.smartContract = None
-            self.type = None
-
+            self.type = 0
 
 OK = NS(code=0, message="")
 ERR = NS(code=1, message="boom")
