@@ -46,6 +46,10 @@ class StubTypes:
             self.forgetNewState = False
             self.smartContractDeploy = None
 
+    class Variant:
+    def __init__(self):
+        pass
+
     class Transaction:
         def __init__(self):
             self.id = 0
