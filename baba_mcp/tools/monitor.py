@@ -33,6 +33,14 @@ class MonitorGetEstimatedFeeInput(_Base):
     transaction_size: int = Field(alias="transactionSize", ge=0)
 
 
+class MonitorWaitForBlockInput(_Base):
+    timeout_ms: int = Field(alias="timeoutMs", ge=0, le=60000, default=30000)
+    pool_hash: Optional[str] = Field(
+        alias="poolHash", default=None,
+        description="Optional base58 hash of last seen block (long-poll cursor)",
+    )
+
+
 # ---------- Implementations (testabili in isolamento) ----------
 
 async def _get_balance_impl(client, inp: MonitorGetBalanceInput) -> Mapping[str, Any]:
@@ -49,6 +57,10 @@ async def _get_transactions_by_wallet_impl(client, inp: MonitorGetTransactionsBy
 
 async def _get_estimated_fee_impl(client, inp: MonitorGetEstimatedFeeInput) -> Mapping[str, Any]:
     return await call_gateway(client, "/api/Monitor/GetEstimatedFee", inp)
+
+
+async def _wait_for_block_impl(client, inp: MonitorWaitForBlockInput) -> Mapping[str, Any]:
+    return await call_gateway(client, "/api/Monitor/WaitForBlock", inp)
 
 
 # ---------- Registration ----------
@@ -90,6 +102,15 @@ def register(server: Server) -> None:
                 inputSchema=MonitorGetEstimatedFeeInput.model_json_schema(by_alias=True),
                 annotations={"readOnlyHint": True},
             ),
+            Tool(
+                name="monitor_wait_for_block",
+                description=(
+                    "Long-poll: blocks until a new pool is sealed on the node, or "
+                    "timeoutMs elapses. Returns blockHash + `changed` flag. Read-only."
+                ),
+                inputSchema=MonitorWaitForBlockInput.model_json_schema(by_alias=True),
+                annotations={"readOnlyHint": True},
+            ),
         ]
 
     @server.call_tool()
@@ -113,6 +134,11 @@ def register(server: Server) -> None:
         if name == "monitor_get_estimated_fee":
             inp = MonitorGetEstimatedFeeInput.model_validate(arguments)
             res = await _get_estimated_fee_impl(client, inp)
+            import json
+            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
+        if name == "monitor_wait_for_block":
+            inp = MonitorWaitForBlockInput.model_validate(arguments)
+            res = await _wait_for_block_impl(client, inp)
             import json
             return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
         raise ValueError(f"Unknown tool: {name}")

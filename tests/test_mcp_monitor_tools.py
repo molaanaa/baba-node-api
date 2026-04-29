@@ -52,3 +52,18 @@ def test_get_estimated_fee():
     c = make_client(handler)
     out = asyncio.run(_get_estimated_fee_impl(c, MonitorGetEstimatedFeeInput(transactionSize=9)))
     assert out["fee"] == 0.00874
+
+
+from baba_mcp.tools.monitor import MonitorWaitForBlockInput, _wait_for_block_impl
+
+def test_wait_for_block_returns_hash_and_changed_flag():
+    def handler(req):
+        return httpx.Response(200, json={
+            "blockHash": "PoolHashB58...",
+            "changed": True,
+            "success": True,
+        })
+    c = make_client(handler)
+    out = asyncio.run(_wait_for_block_impl(c, MonitorWaitForBlockInput(timeoutMs=30000)))
+    assert out["changed"] is True
+    assert "blockHash" in out
