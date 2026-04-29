@@ -32,3 +32,14 @@ def test_tokens_balances_get_includes_pagination():
     out = asyncio.run(_balances_get_impl(c, TokensBalancesGetInput(public_key="W", offset=0, limit=50)))
     assert b'"limit": 50' in seen["body"]
     assert out["balances"][0]["code"] == "TST"
+
+
+from baba_mcp.tools.tokens import TokensTransfersGetInput, _transfers_get_impl
+
+def test_tokens_transfers_get():
+    def handler(req):
+        return httpx.Response(200, json={"transfers": [], "success": True, "message": None})
+    c = make_client(handler)
+    inp = TokensTransfersGetInput(token="TokB58", offset=0, limit=10)
+    out = asyncio.run(_transfers_get_impl(c, inp))
+    assert out["success"] is True

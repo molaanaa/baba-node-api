@@ -24,9 +24,19 @@ async def _balances_get_impl(client, inp):
     return await call_gateway(client, "/api/Tokens/BalancesGet", inp)
 
 
+class TokensTransfersGetInput(_Base):
+    token: str
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=10, ge=1, le=500)
+
+async def _transfers_get_impl(client, inp):
+    return await call_gateway(client, "/api/Tokens/TransfersGet", inp)
+
+
 _DISPATCH: dict = {
     "tokens_info": (TokensInfoInput, _info_impl),
     "tokens_balances_get": (TokensBalancesGetInput, _balances_get_impl),
+    "tokens_transfers_get": (TokensTransfersGetInput, _transfers_get_impl),
 }
 
 _TOOL_DEFS = [
@@ -43,6 +53,12 @@ _TOOL_DEFS = [
         name="tokens_balances_get",
         description="List token balances for a wallet (paginated). Read-only.",
         inputSchema=TokensBalancesGetInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="tokens_transfers_get",
+        description="List recent transfers of a specific token. Paginated. Read-only.",
+        inputSchema=TokensTransfersGetInput.model_json_schema(by_alias=True),
         annotations={"readOnlyHint": True},
     ),
 ]
