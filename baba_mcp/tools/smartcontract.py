@@ -2,7 +2,7 @@
 from __future__ import annotations
 import json
 from typing import Any, List, Mapping, Optional
-from pydantic import Field
+from pydantic import Field, model_validator
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 
@@ -74,12 +74,27 @@ async def _get_impl(client, inp):
     return await call_gateway(client, "/api/SmartContract/Get", inp)
 
 
+class SmartContractMethodsInput(_Base):
+    address: Optional[str] = None
+    byte_code_objects: Optional[List[dict]] = Field(alias="byteCodeObjects", default=None)
+
+    @model_validator(mode="after")
+    def _exactly_one(self):
+        if (self.address is None) == (self.byte_code_objects is None):
+            raise ValueError("Provide exactly one of: address, byteCodeObjects")
+        return self
+
+async def _methods_impl(client, inp):
+    return await call_gateway(client, "/api/SmartContract/Methods", inp)
+
+
 _DISPATCH: dict = {
     "smartcontract_compile": (SmartContractCompileInput, _compile_impl),
     "smartcontract_pack": (SmartContractPackInput, _pack_impl),
     "smartcontract_deploy": (SmartContractDeployInput, _deploy_impl),
     "smartcontract_execute": (SmartContractExecuteInput, _execute_impl),
     "smartcontract_get": (SmartContractGetInput, _get_impl),
+    "smartcontract_methods": (SmartContractMethodsInput, _methods_impl),
 }
 
 _TOOL_DEFS = [
@@ -136,6 +151,15 @@ _TOOL_DEFS = [
         name="smartcontract_get",
         description="Read deployed smart contract: deployer, sourceCode, byteCodeObjects, transactionsCount. Read-only.",
         inputSchema=SmartContractGetInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="smartcontract_methods",
+        description=(
+            "List the public methods of a smart contract. Provide either `address` "
+            "(deployed contract) or `byteCodeObjects` (pre-deploy inspection). Read-only."
+        ),
+        inputSchema=SmartContractMethodsInput.model_json_schema(by_alias=True),
         annotations={"readOnlyHint": True},
     ),
 ]
