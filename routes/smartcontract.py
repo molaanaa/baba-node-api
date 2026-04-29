@@ -17,10 +17,46 @@ forwards it via ``TransactionFlow`` exactly as the existing
 
 from __future__ import annotations
 
+import time
+
 import base58
 from flask import Blueprint, jsonify, request
 
 from services import contracts as _contracts
+
+
+def _poll_sealed_tx_by_inner_id(get_node_client, source_bytes, inner_id, *,
+                                  timeout_s=15, poll_interval_s=1.0):
+    """After a SmartContract Deploy/Execute, the Credits node sometimes closes
+    the Thrift connection before sending the TransactionFlow response, even
+    though it accepts the tx and seals it 1-5 seconds later. Poll
+    ``TransactionsGet(source)`` for a sealed transaction whose
+    ``trxn.id == inner_id``. Returns the formatted ``"<poolSeq>.<idx>"`` tx id
+    or ``None`` if no sealed tx with that innerId appears within ``timeout_s``.
+    """
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        time.sleep(poll_interval_s)
+        client, transport = get_node_client()
+        if not client:
+            continue
+        try:
+            res = client.TransactionsGet(source_bytes, 0, 10)
+            for tx in getattr(res, "transactions", None) or []:
+                trxn = getattr(tx, "trxn", None)
+                if trxn is None:
+                    continue
+                if int(getattr(trxn, "id", -1) or -1) == int(inner_id):
+                    tx_id = getattr(tx, "id", None)
+                    if tx_id is None:
+                        continue
+                    return f"{getattr(tx_id, 'poolSeq', 0)}.{int(getattr(tx_id, 'index', 0)) + 1}"
+        except Exception:
+            pass
+        finally:
+            if transport and transport.isOpen():
+                transport.close()
+    return None
 
 
 def _decode_address(value, field_name):
@@ -81,33 +117,68 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
         client, transport = get_node_client(timeout_ms=90000)
         if not client:
             return jsonify({"success": False, "message": "Node Unavailable"}), 503
+        flow_error = None
         try:
-            res = client.TransactionFlow(tx)
-            status = getattr(res, "status", None)
-            success = getattr(status, "code", 1) == 0
-            tx_id = getattr(res, "id", None)
-            tx_id_str = (
-                f"{getattr(tx_id, 'poolSeq', 0)}.{getattr(tx_id, 'index', 0) + 1}"
-                if tx_id and hasattr(tx_id, "poolSeq") else None
-            )
+            try:
+                res = client.TransactionFlow(tx)
+            except Exception as e:
+                # The Credits node sometimes closes the Thrift connection before
+                # responding even though it accepts the SC tx and seals it a few
+                # seconds later. Capture and fall through to polling below.
+                flow_error = e
+                res = None
+
+            if res is not None:
+                status = getattr(res, "status", None)
+                success = getattr(status, "code", 1) == 0
+                tx_id = getattr(res, "id", None)
+                tx_id_str = (
+                    f"{getattr(tx_id, 'poolSeq', 0)}.{getattr(tx_id, 'index', 0) + 1}"
+                    if tx_id and hasattr(tx_id, "poolSeq") else None
+                )
+                return jsonify({
+                    "amount": full_decimal(amount_str),
+                    "dataResponse": {
+                        "actualSum": 0, "publicKey": None, "recommendedFee": float(rec_fee),
+                        "smartContractResult": getattr(res, "smart_contract_result", None),
+                        "transactionPackagedStr": None,
+                    },
+                    "actualSum": full_decimal(getattr(res, "sum", amount_str)),
+                    "actualFee": full_decimal(getattr(res, "fee", rec_fee)),
+                    "extraFee": None, "flowResult": None, "listItem": [], "listTransactionInfo": None,
+                    "message": None,
+                    "messageError": getattr(status, "message", None) if not success else None,
+                    "success": success, "transactionId": tx_id_str,
+                    "transactionInfo": None, "transactionInnerId": inner_id, "blockId": 0,
+                })
+        finally:
+            if transport and transport.isOpen():
+                transport.close()
+
+        # Fallback: TransactionFlow raised, but the tx may still have been sealed.
+        # Poll TransactionsGet(source) for ~15s for a sealed entry with our innerId.
+        log(f"SmartContract TransactionFlow raised ({type(flow_error).__name__}: {flow_error!r}); "
+            f"polling for inner_id={inner_id} on source", is_error=True)
+        sealed_tx_id = _poll_sealed_tx_by_inner_id(get_node_client, tx.source, inner_id)
+        if sealed_tx_id:
+            log(f"SmartContract recovered: tx {sealed_tx_id} sealed for inner_id={inner_id}",
+                is_error=False)
             return jsonify({
                 "amount": full_decimal(amount_str),
                 "dataResponse": {
                     "actualSum": 0, "publicKey": None, "recommendedFee": float(rec_fee),
-                    "smartContractResult": getattr(res, "smart_contract_result", None),
-                    "transactionPackagedStr": None,
+                    "smartContractResult": None, "transactionPackagedStr": None,
                 },
-                "actualSum": full_decimal(getattr(res, "sum", amount_str)),
-                "actualFee": full_decimal(getattr(res, "fee", rec_fee)),
+                "actualSum": full_decimal(amount_str),
+                "actualFee": full_decimal(rec_fee),
                 "extraFee": None, "flowResult": None, "listItem": [], "listTransactionInfo": None,
-                "message": None,
-                "messageError": getattr(status, "message", None) if not success else None,
-                "success": success, "transactionId": tx_id_str,
+                "message": "TransactionFlow disconnected; recovered via post-seal polling.",
+                "messageError": None,
+                "success": True, "transactionId": sealed_tx_id,
                 "transactionInfo": None, "transactionInnerId": inner_id, "blockId": 0,
             })
-        finally:
-            if transport and transport.isOpen():
-                transport.close()
+        # Polling timed out — re-raise so the outer except logs the original error.
+        raise flow_error if flow_error else RuntimeError("TransactionFlow returned no result")
 
     def _resolve_inner_id_and_fee(sender_b, user_fields, *, override_inner_id=None):
         """Resolve next ``inner_id`` and a recommended fee.
