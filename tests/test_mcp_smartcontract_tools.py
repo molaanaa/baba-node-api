@@ -83,3 +83,18 @@ def test_smartcontract_execute():
     )
     out = asyncio.run(_execute_impl(c, inp))
     assert out["success"] is True
+
+
+from baba_mcp.tools.smartcontract import SmartContractGetInput, _get_impl
+
+def test_smartcontract_get_returns_source_and_bytecode():
+    def handler(req):
+        return httpx.Response(200, json={
+            "address": "FwdrHR...", "deployer": "OwnerB58",
+            "sourceCode": "public class C ...",
+            "byteCodeObjects": [{"name": "C", "byteCode": "AAA="}],
+            "transactionsCount": 4, "success": True, "message": None,
+        })
+    c = make_client(handler)
+    out = asyncio.run(_get_impl(c, SmartContractGetInput(address="FwdrHR...")))
+    assert out["transactionsCount"] == 4

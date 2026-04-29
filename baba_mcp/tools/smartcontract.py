@@ -67,11 +67,19 @@ async def _execute_impl(client, inp):
     return await call_gateway(client, "/api/SmartContract/Execute", inp)
 
 
+class SmartContractGetInput(_Base):
+    address: str
+
+async def _get_impl(client, inp):
+    return await call_gateway(client, "/api/SmartContract/Get", inp)
+
+
 _DISPATCH: dict = {
     "smartcontract_compile": (SmartContractCompileInput, _compile_impl),
     "smartcontract_pack": (SmartContractPackInput, _pack_impl),
     "smartcontract_deploy": (SmartContractDeployInput, _deploy_impl),
     "smartcontract_execute": (SmartContractExecuteInput, _execute_impl),
+    "smartcontract_get": (SmartContractGetInput, _get_impl),
 }
 
 _TOOL_DEFS = [
@@ -123,6 +131,12 @@ _TOOL_DEFS = [
         ),
         inputSchema=SmartContractExecuteInput.model_json_schema(by_alias=True),
         annotations={"destructiveHint": True},
+    ),
+    Tool(
+        name="smartcontract_get",
+        description="Read deployed smart contract: deployer, sourceCode, byteCodeObjects, transactionsCount. Read-only.",
+        inputSchema=SmartContractGetInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
     ),
 ]
 
