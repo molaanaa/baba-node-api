@@ -25,3 +25,16 @@ def test_diag_active_tx_count():
     c = make_client(handler)
     out = asyncio.run(_active_tx_count_impl(c, DiagEmptyInput()))
     assert out["count"] == 17
+
+
+from baba_mcp.tools.diag import _node_info_impl
+
+def test_diag_node_info():
+    def handler(req):
+        return httpx.Response(200, json={
+            "nodeVersion": "5.x", "uptimeMs": 12345678,
+            "blockchainTopHash": "Hash58...", "success": True, "message": None,
+        })
+    c = make_client(handler)
+    out = asyncio.run(_node_info_impl(c, DiagEmptyInput()))
+    assert out["nodeVersion"] == "5.x"
