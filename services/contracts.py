@@ -136,6 +136,28 @@ def build_byte_code_objects(types_ns: Any, items: Iterable[dict]) -> list:
         out.append(bco)
     return out
 
+def _dict_to_variant(types_ns, item):
+    """Convert a JSON-friendly dict into a Thrift Variant."""
+    Variant = getattr(types_ns, "Variant")
+    v = Variant()
+    if not isinstance(item, dict):
+        return item
+    if 'v_string' in item or 'valString' in item:
+        v.v_string = item.get('v_string') or item.get('valString')
+    elif 'v_int' in item or 'valInt' in item:
+        v.v_int = int(item.get('v_int') or item.get('valInt'))
+    elif 'v_bool' in item or 'valBool' in item:
+        v.v_bool = bool(item.get('v_bool') or item.get('valBool'))
+    elif 'v_byte_array' in item or 'valByteArray' in item:
+        raw = item.get('v_byte_array') or item.get('valByteArray')
+        v.v_byte_array = bytes(raw) if isinstance(raw, (bytes, bytearray)) else bytes(raw, 'utf-8')
+    else:
+        for key, val in item.items():
+            if hasattr(v, key):
+                setattr(v, key, val)
+                break
+    return v
+
 
 def build_smart_invocation(
     types_ns: Any,
@@ -160,7 +182,7 @@ def build_smart_invocation(
     if hasattr(sc, "method"):
         sc.method = method or ""
     if hasattr(sc, "params"):
-        sc.params = list(params or [])
+        sc.params = [_dict_to_variant(types_ns, p) for p in (params or [])]
     if hasattr(sc, "forgetNewState"):
         sc.forgetNewState = bool(forget_new_state)
 
