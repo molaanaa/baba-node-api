@@ -47,7 +47,7 @@ class StubTypes:
             self.smartContractDeploy = None
 
     class Variant:
-    pass
+        pass
 
     class Transaction:
         def __init__(self):
