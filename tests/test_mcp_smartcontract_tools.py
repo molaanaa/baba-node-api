@@ -66,3 +66,20 @@ def test_smartcontract_deploy_with_inner_id_override():
     out = asyncio.run(_deploy_impl(c, inp))
     assert out["transactionId"] == "174580000.1"
     assert b'"transactionInnerId": 7' in seen["body"]
+
+
+from baba_mcp.tools.smartcontract import SmartContractExecuteInput, _execute_impl
+
+def test_smartcontract_execute():
+    def handler(req):
+        return httpx.Response(200, json={
+            "success": True, "transactionId": "174580010.1",
+            "actualFee": "0.05", "smartContractResult": None, "message": None,
+        })
+    c = make_client(handler)
+    inp = SmartContractExecuteInput(
+        public_key="A", receiver_public_key="ContrB58", method="getCounter",
+        params=[], transaction_signature="Sig58...", transaction_inner_id=8,
+    )
+    out = asyncio.run(_execute_impl(c, inp))
+    assert out["success"] is True

@@ -51,10 +51,27 @@ async def _deploy_impl(client, inp):
     return await call_gateway(client, "/api/SmartContract/Deploy", inp)
 
 
+class SmartContractExecuteInput(_Base):
+    public_key: str = Field(alias="PublicKey")
+    receiver_public_key: str = Field(alias="ReceiverPublicKey",
+        description="Contract address (base58)")
+    method: str
+    params: List[dict] = Field(default_factory=list,
+        description="Variant list of arguments")
+    transaction_signature: str = Field(alias="TransactionSignature")
+    transaction_inner_id: int = Field(alias="transactionInnerId", ge=1)
+    fee_as_string: str = Field(alias="feeAsString", default="0")
+    user_data: str = Field(alias="UserData", default="")
+
+async def _execute_impl(client, inp):
+    return await call_gateway(client, "/api/SmartContract/Execute", inp)
+
+
 _DISPATCH: dict = {
     "smartcontract_compile": (SmartContractCompileInput, _compile_impl),
     "smartcontract_pack": (SmartContractPackInput, _pack_impl),
     "smartcontract_deploy": (SmartContractDeployInput, _deploy_impl),
+    "smartcontract_execute": (SmartContractExecuteInput, _execute_impl),
 }
 
 _TOOL_DEFS = [
@@ -95,6 +112,16 @@ _TOOL_DEFS = [
             "smartcontract_pack. Writes to the blockchain — fee ~0.1 CS."
         ),
         inputSchema=SmartContractDeployInput.model_json_schema(by_alias=True),
+        annotations={"destructiveHint": True},
+    ),
+    Tool(
+        name="smartcontract_execute",
+        description=(
+            "Call a method on a deployed Credits smart contract. Requires signed "
+            "payload from smartcontract_pack (operation='execute'). transactionInnerId "
+            "must equal the pack response. Writes to the blockchain."
+        ),
+        inputSchema=SmartContractExecuteInput.model_json_schema(by_alias=True),
         annotations={"destructiveHint": True},
     ),
 ]
