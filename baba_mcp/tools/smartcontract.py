@@ -95,6 +95,15 @@ async def _state_impl(client, inp):
     return await call_gateway(client, "/api/SmartContract/State", inp)
 
 
+class SmartContractListByWalletInput(_Base):
+    deployer: str
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=10, ge=1, le=500)
+
+async def _list_by_wallet_impl(client, inp):
+    return await call_gateway(client, "/api/SmartContract/ListByWallet", inp)
+
+
 _DISPATCH: dict = {
     "smartcontract_compile": (SmartContractCompileInput, _compile_impl),
     "smartcontract_pack": (SmartContractPackInput, _pack_impl),
@@ -103,6 +112,7 @@ _DISPATCH: dict = {
     "smartcontract_get": (SmartContractGetInput, _get_impl),
     "smartcontract_methods": (SmartContractMethodsInput, _methods_impl),
     "smartcontract_state": (SmartContractStateInput, _state_impl),
+    "smartcontract_list_by_wallet": (SmartContractListByWalletInput, _list_by_wallet_impl),
 }
 
 _TOOL_DEFS = [
@@ -174,6 +184,12 @@ _TOOL_DEFS = [
         name="smartcontract_state",
         description="Read the current public state (instance fields) of a deployed smart contract. Read-only.",
         inputSchema=SmartContractStateInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="smartcontract_list_by_wallet",
+        description="List smart contracts deployed by a wallet (paginated). Read-only.",
+        inputSchema=SmartContractListByWalletInput.model_json_schema(by_alias=True),
         annotations={"readOnlyHint": True},
     ),
 ]

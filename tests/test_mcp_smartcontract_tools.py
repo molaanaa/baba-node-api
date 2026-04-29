@@ -137,3 +137,17 @@ def test_smartcontract_state():
     c = make_client(handler)
     out = asyncio.run(_state_impl(c, SmartContractStateInput(address="FwdrHR...")))
     assert out["fields"][0]["value"] == 4
+
+
+from baba_mcp.tools.smartcontract import SmartContractListByWalletInput, _list_by_wallet_impl
+
+def test_smartcontract_list_by_wallet_paginated():
+    seen = {}
+    def handler(req):
+        seen["body"] = req.content
+        return httpx.Response(200, json={"contracts": [], "success": True, "message": None})
+    c = make_client(handler)
+    out = asyncio.run(_list_by_wallet_impl(c, SmartContractListByWalletInput(
+        deployer="OwnerB58", offset=0, limit=10)))
+    assert b'"offset": 0' in seen["body"]
+    assert b'"limit": 10' in seen["body"]
