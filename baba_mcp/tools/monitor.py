@@ -6,6 +6,7 @@ Tools:
   monitor_wait_for_block, monitor_wait_for_smart_transaction
 """
 from __future__ import annotations
+import json
 from typing import Any, Mapping, Optional
 from pydantic import Field
 from mcp.server import Server
@@ -131,37 +132,21 @@ def register(server: Server) -> None:
             ),
         ]
 
+    _DISPATCH = {
+        "monitor_get_balance":               (MonitorGetBalanceInput, _get_balance_impl),
+        "monitor_get_wallet_info":           (MonitorGetWalletInfoInput, _get_wallet_info_impl),
+        "monitor_get_transactions_by_wallet":(MonitorGetTransactionsByWalletInput, _get_transactions_by_wallet_impl),
+        "monitor_get_estimated_fee":         (MonitorGetEstimatedFeeInput, _get_estimated_fee_impl),
+        "monitor_wait_for_block":            (MonitorWaitForBlockInput, _wait_for_block_impl),
+        "monitor_wait_for_smart_transaction":(MonitorWaitForSmartTransactionInput, _wait_for_smart_transaction_impl),
+    }
+
     @server.call_tool()
     async def _call(name: str, arguments: dict) -> list[TextContent]:
         client = server.gateway  # type: ignore[attr-defined]
-        if name == "monitor_get_balance":
-            inp = MonitorGetBalanceInput.model_validate(arguments)
-            res = await _get_balance_impl(client, inp)
-            import json
-            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
-        if name == "monitor_get_wallet_info":
-            inp = MonitorGetWalletInfoInput.model_validate(arguments)
-            res = await _get_wallet_info_impl(client, inp)
-            import json
-            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
-        if name == "monitor_get_transactions_by_wallet":
-            inp = MonitorGetTransactionsByWalletInput.model_validate(arguments)
-            res = await _get_transactions_by_wallet_impl(client, inp)
-            import json
-            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
-        if name == "monitor_get_estimated_fee":
-            inp = MonitorGetEstimatedFeeInput.model_validate(arguments)
-            res = await _get_estimated_fee_impl(client, inp)
-            import json
-            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
-        if name == "monitor_wait_for_block":
-            inp = MonitorWaitForBlockInput.model_validate(arguments)
-            res = await _wait_for_block_impl(client, inp)
-            import json
-            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
-        if name == "monitor_wait_for_smart_transaction":
-            inp = MonitorWaitForSmartTransactionInput.model_validate(arguments)
-            res = await _wait_for_smart_transaction_impl(client, inp)
-            import json
-            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
-        raise ValueError(f"Unknown tool: {name}")
+        if name not in _DISPATCH:
+            raise ValueError(f"Unknown tool: {name}")
+        cls, impl = _DISPATCH[name]
+        inp = cls.model_validate(arguments)
+        res = await impl(client, inp)
+        return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
