@@ -37,9 +37,24 @@ async def _pack_impl(client, inp):
     return await call_gateway(client, "/api/SmartContract/Pack", inp)
 
 
+class SmartContractDeployInput(_Base):
+    public_key: str = Field(alias="PublicKey")
+    source_code: str = Field(alias="sourceCode")
+    byte_code_objects: List[dict] = Field(alias="byteCodeObjects")
+    transaction_signature: str = Field(alias="TransactionSignature")
+    transaction_inner_id: int = Field(alias="transactionInnerId", ge=1,
+        description="Must be the same value returned by smartcontract_pack")
+    fee_as_string: str = Field(alias="feeAsString", default="0")
+    user_data: str = Field(alias="UserData", default="")
+
+async def _deploy_impl(client, inp):
+    return await call_gateway(client, "/api/SmartContract/Deploy", inp)
+
+
 _DISPATCH: dict = {
     "smartcontract_compile": (SmartContractCompileInput, _compile_impl),
     "smartcontract_pack": (SmartContractPackInput, _pack_impl),
+    "smartcontract_deploy": (SmartContractDeployInput, _deploy_impl),
 }
 
 _TOOL_DEFS = [
@@ -70,6 +85,17 @@ _TOOL_DEFS = [
         ),
         inputSchema=SmartContractPackInput.model_json_schema(by_alias=True),
         annotations={"idempotentHint": True},
+    ),
+    Tool(
+        name="smartcontract_deploy",
+        description=(
+            "Deploy a Java smart contract on Credits. Requires the byteCodeObjects "
+            "from smartcontract_compile and the signed payload from smartcontract_pack "
+            "(operation='deploy'). transactionInnerId MUST equal the value returned by "
+            "smartcontract_pack. Writes to the blockchain — fee ~0.1 CS."
+        ),
+        inputSchema=SmartContractDeployInput.model_json_schema(by_alias=True),
+        annotations={"destructiveHint": True},
     ),
 ]
 

@@ -42,3 +42,27 @@ def test_smartcontract_pack_deploy_payload():
     )
     out = asyncio.run(_pack_impl(c, inp))
     assert out["dataResponse"]["transactionInnerId"] == 7
+
+
+from baba_mcp.tools.smartcontract import SmartContractDeployInput, _deploy_impl
+
+def test_smartcontract_deploy_with_inner_id_override():
+    seen = {}
+    def handler(req):
+        seen["body"] = req.content
+        return httpx.Response(200, json={
+            "success": True,
+            "transactionId": "174580000.1",
+            "deployedAddress": "FwdrHR...",
+            "actualFee": "0.1", "message": None,
+        })
+    c = make_client(handler)
+    inp = SmartContractDeployInput(
+        public_key="A", source_code="...",
+        byte_code_objects=[{"name": "C", "byteCode": "AAA="}],
+        transaction_signature="Sig58...",
+        transaction_inner_id=7,
+    )
+    out = asyncio.run(_deploy_impl(c, inp))
+    assert out["transactionId"] == "174580000.1"
+    assert b'"transactionInnerId": 7' in seen["body"]
