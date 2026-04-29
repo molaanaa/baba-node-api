@@ -93,3 +93,16 @@ def test_execute_happy_path():
     assert out["success"] is True
     assert out["transactionId"] == "174575023.1"
     assert b'"TransactionSignature": "Sig58..."' in seen["body"]
+
+from baba_mcp.tools.transaction import TransactionResultInput, _result_impl
+
+def test_transaction_result_returns_status():
+    def handler(req):
+        return httpx.Response(200, json={
+            "transactionId": "174575023.1", "found": True,
+            "executionTime": 12, "returnValue": None,
+            "success": True, "message": None,
+        })
+    c = make_client(handler)
+    out = asyncio.run(_result_impl(c, TransactionResultInput(transactionId="174575023.1")))
+    assert out["found"] is True

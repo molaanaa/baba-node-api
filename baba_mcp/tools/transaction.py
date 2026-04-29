@@ -34,10 +34,19 @@ async def _execute_impl(client, inp):
     return await call_gateway(client, "/api/Transaction/Execute", inp)
 
 
+class TransactionResultInput(TransactionIdInput):
+    pass
+
+
+async def _result_impl(client, inp):
+    return await call_gateway(client, "/api/Transaction/Result", inp)
+
+
 _DISPATCH: dict = {
     "transaction_get_info": (TransactionGetInfoInput, _get_info_impl),
     "transaction_pack": (TransactionPackInput, _pack_impl),
     "transaction_execute": (TransactionExecuteInput, _execute_impl),
+    "transaction_result": (TransactionResultInput, _result_impl),
 }
 
 _TOOL_DEFS = [
@@ -76,6 +85,16 @@ _TOOL_DEFS = [
         ),
         inputSchema=TransactionExecuteInput.model_json_schema(by_alias=True),
         annotations={"destructiveHint": True},
+    ),
+    Tool(
+        name="transaction_result",
+        description=(
+            "Get the SmartExecutionResult of a smart-contract transaction "
+            "(executionTime, returnValue Variant, status). For non-smart "
+            "transactions returns minimal info. Read-only."
+        ),
+        inputSchema=TransactionResultInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
     ),
 ]
 
