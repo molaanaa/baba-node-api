@@ -440,6 +440,67 @@ node-side consensus + executor invocation has time to complete.
 
 ---
 
+## 🤖 MCP Server (`baba-credits`)
+
+The gateway is also exposed as a **Model Context Protocol** server so AI agents
+(Claude Code/Desktop, smart wallets with embedded AI, custom agents) can
+operate on the Credits blockchain using structured tools.
+
+The MCP server is a thin Python wrapper sitting on top of this gateway. It is
+**non-custodial**: it never holds private keys. The signing pipeline is
+`Pack → ed25519 sign (client-side) → Execute → Wait`.
+
+### Quick start (bundled with the gateway via pm2)
+
+```bash
+pip3 install -r requirements.txt
+pm2 start ecosystem.config.js && pm2 save
+# Now both:
+#   gateway        on :5000 (HTTP REST)
+#   baba-mcp-http  on :7000 (MCP SSE)
+```
+
+### Local stdio (Claude Code)
+
+Add a `.mcp.json` at the repo root:
+
+```json
+{
+  "mcpServers": {
+    "baba-credits": {
+      "command": "python3",
+      "args": ["-m", "baba_mcp.server"],
+      "cwd": "/home/credits/baba-node-api",
+      "env": { "BABA_GATEWAY_URL": "http://127.0.0.1:5000" }
+    }
+  }
+}
+```
+
+### Tools
+
+29 tools total, mapping 1:1 to the REST endpoints. See the skill at
+`.claude/skills/baba-credits/` for the full catalog and recipes
+(transfer, deploy, execute, inspect, attach metadata, token operations).
+
+### Example end-to-end transfer (CS, 0.001 from A → B)
+
+```text
+1. agent → transaction_pack    → returns transactionPackagedStr (base58)
+2. agent → (sign client-side)  → 64-byte ed25519 signature
+3. agent → transaction_execute → transactionId "174575023.1"
+4. agent → monitor_wait_for_block → block sealed
+```
+
+### Security notes
+
+- The MCP server NEVER signs server-side (vincolo non-custodial). If you need a
+  signer microservice, run a separate companion MCP — do NOT add signing here.
+- When `MCP_TRANSPORT=http` and exposed beyond localhost, set `MCP_AUTH_TOKEN`
+  and front the SSE port with Nginx + TLS (see `.env.mcp.example`).
+
+---
+
 ## 📄 License
 
 MIT License
