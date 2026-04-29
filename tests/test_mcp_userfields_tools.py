@@ -21,3 +21,18 @@ def test_userfields_encode():
     )
     out = asyncio.run(_encode_impl(c, inp))
     assert out["userData"].startswith("uF58")
+
+
+from baba_mcp.tools.userfields import UserFieldsDecodeInput, _decode_impl
+
+def test_userfields_decode():
+    def handler(req):
+        return httpx.Response(200, json={
+            "success": True,
+            "fields": {"contentHashAlgo": "sha-256", "contentHash": "0011...",
+                       "contentCid": "bafy...", "mime": "image/png", "sizeBytes": 1234567},
+            "message": None,
+        })
+    c = make_client(handler)
+    out = asyncio.run(_decode_impl(c, UserFieldsDecodeInput(userData="uF58...")))
+    assert out["fields"]["mime"] == "image/png"

@@ -22,8 +22,17 @@ async def _encode_impl(client, inp):
     return await call_gateway(client, "/api/UserFields/Encode", inp)
 
 
+class UserFieldsDecodeInput(_Base):
+    user_data: str = Field(alias="userData", min_length=1)
+
+
+async def _decode_impl(client, inp):
+    return await call_gateway(client, "/api/UserFields/Decode", inp)
+
+
 _DISPATCH: dict = {
     "userfields_encode": (UserFieldsEncodeInput, _encode_impl),
+    "userfields_decode": (UserFieldsDecodeInput, _decode_impl),
 }
 
 _TOOL_DEFS = [
@@ -35,6 +44,15 @@ _TOOL_DEFS = [
             "Pure function: no on-chain side-effect."
         ),
         inputSchema=UserFieldsEncodeInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True, "idempotentHint": True},
+    ),
+    Tool(
+        name="userfields_decode",
+        description=(
+            "Decode a userFields v1 base58 blob (as stored in a tx's UserData) into "
+            "structured fields. Pure function. Read-only."
+        ),
+        inputSchema=UserFieldsDecodeInput.model_json_schema(by_alias=True),
         annotations={"readOnlyHint": True, "idempotentHint": True},
     ),
 ]
