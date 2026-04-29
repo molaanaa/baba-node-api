@@ -1,10 +1,8 @@
 """Transaction tools — info / pack / execute / result."""
 from __future__ import annotations
-import json
 from typing import Any, Mapping
 from pydantic import Field
-from mcp.server import Server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool
 
 from baba_mcp.schemas import _Base, TransactionIdInput, TransferIntent
 from baba_mcp.tools._helpers import call_gateway
@@ -97,19 +95,3 @@ _TOOL_DEFS = [
         annotations={"readOnlyHint": True},
     ),
 ]
-
-
-def register(server: Server) -> None:
-    @server.list_tools()
-    async def _list_tools() -> list[Tool]:
-        return list(_TOOL_DEFS)
-
-    @server.call_tool()
-    async def _call(name: str, arguments: dict) -> list[TextContent]:
-        client = server.gateway  # type: ignore[attr-defined]
-        if name not in _DISPATCH:
-            raise ValueError(f"Unknown tool: {name}")
-        cls, impl = _DISPATCH[name]
-        inp = cls.model_validate(arguments)
-        res = await impl(client, inp)
-        return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]

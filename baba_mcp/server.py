@@ -58,8 +58,32 @@ def build_server(cfg: Config, register_tools: bool = True) -> Server:
 
     if register_tools:
         from baba_mcp.tools import monitor, transaction, tokens, smartcontract, userfields, diag
-        for mod in (monitor, transaction, tokens, smartcontract, userfields, diag):
-            mod.register(server)
+        from mcp.types import Tool, TextContent
+        import json as _json
+
+        modules = (monitor, transaction, tokens, smartcontract, userfields, diag)
+        merged_dispatch: dict = {}
+        merged_tool_defs: list[Tool] = []
+        for mod in modules:
+            for tool_name, entry in mod._DISPATCH.items():
+                if tool_name in merged_dispatch:
+                    raise RuntimeError(f"Tool name collision: {tool_name!r}")
+                merged_dispatch[tool_name] = entry
+            merged_tool_defs.extend(mod._TOOL_DEFS)
+
+        @server.list_tools()
+        async def _list_tools() -> list[Tool]:
+            return list(merged_tool_defs)
+
+        @server.call_tool()
+        async def _call(name: str, arguments: dict) -> list[TextContent]:
+            client = server.gateway  # type: ignore[attr-defined]
+            if name not in merged_dispatch:
+                raise ValueError(f"Unknown tool: {name}")
+            cls, impl = merged_dispatch[name]
+            inp = cls.model_validate(arguments)
+            res = await impl(client, inp)
+            return [TextContent(type="text", text=_json.dumps(res, ensure_ascii=False))]
 
     return server
 

@@ -6,11 +6,9 @@ Tools:
   monitor_wait_for_block, monitor_wait_for_smart_transaction
 """
 from __future__ import annotations
-import json
 from typing import Any, Mapping, Optional
 from pydantic import Field
-from mcp.server import Server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool
 
 from baba_mcp.schemas import _Base, PublicKeyInput, PaginatedInput
 from baba_mcp.tools._helpers import call_gateway
@@ -73,80 +71,67 @@ async def _wait_for_smart_transaction_impl(client, inp: MonitorWaitForSmartTrans
     return await call_gateway(client, "/api/Monitor/WaitForSmartTransaction", inp)
 
 
-# ---------- Registration ----------
+# ---------- Module-level dispatch + tool defs ----------
 
-def register(server: Server) -> None:
-    @server.list_tools()
-    async def _list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name="monitor_get_balance",
-                description=(
-                    "Read the CS balance + delegation totals of a Credits wallet. "
-                    "Read-only. Input: { PublicKey: <base58> }."
-                ),
-                inputSchema=MonitorGetBalanceInput.model_json_schema(by_alias=True),
-                annotations={"readOnlyHint": True},
-            ),
-            Tool(
-                name="monitor_get_wallet_info",
-                description=(
-                    "Read full wallet data: balance + lastTransactionId + delegations "
-                    "(incoming/outgoing totals + donors/recipients lists). Read-only."
-                ),
-                inputSchema=MonitorGetWalletInfoInput.model_json_schema(by_alias=True),
-                annotations={"readOnlyHint": True},
-            ),
-            Tool(
-                name="monitor_get_transactions_by_wallet",
-                description=(
-                    "Paginated transaction history for a wallet. Returns id, sum, fee, "
-                    "from/to, time, status, currency. Default page size 10, max 500. Read-only."
-                ),
-                inputSchema=MonitorGetTransactionsByWalletInput.model_json_schema(by_alias=True),
-                annotations={"readOnlyHint": True},
-            ),
-            Tool(
-                name="monitor_get_estimated_fee",
-                description="Estimate fee for a transaction of given byte size. Read-only.",
-                inputSchema=MonitorGetEstimatedFeeInput.model_json_schema(by_alias=True),
-                annotations={"readOnlyHint": True},
-            ),
-            Tool(
-                name="monitor_wait_for_block",
-                description=(
-                    "Long-poll: blocks until a new pool is sealed on the node, or "
-                    "timeoutMs elapses. Returns blockHash + `changed` flag. Read-only."
-                ),
-                inputSchema=MonitorWaitForBlockInput.model_json_schema(by_alias=True),
-                annotations={"readOnlyHint": True},
-            ),
-            Tool(
-                name="monitor_wait_for_smart_transaction",
-                description=(
-                    "Long-poll: blocks until the next smart-contract transaction "
-                    "targeting `address` is sealed. Returns transactionId + found. Read-only."
-                ),
-                inputSchema=MonitorWaitForSmartTransactionInput.model_json_schema(by_alias=True),
-                annotations={"readOnlyHint": True},
-            ),
-        ]
+_DISPATCH: dict = {
+    "monitor_get_balance":               (MonitorGetBalanceInput, _get_balance_impl),
+    "monitor_get_wallet_info":           (MonitorGetWalletInfoInput, _get_wallet_info_impl),
+    "monitor_get_transactions_by_wallet":(MonitorGetTransactionsByWalletInput, _get_transactions_by_wallet_impl),
+    "monitor_get_estimated_fee":         (MonitorGetEstimatedFeeInput, _get_estimated_fee_impl),
+    "monitor_wait_for_block":            (MonitorWaitForBlockInput, _wait_for_block_impl),
+    "monitor_wait_for_smart_transaction":(MonitorWaitForSmartTransactionInput, _wait_for_smart_transaction_impl),
+}
 
-    _DISPATCH = {
-        "monitor_get_balance":               (MonitorGetBalanceInput, _get_balance_impl),
-        "monitor_get_wallet_info":           (MonitorGetWalletInfoInput, _get_wallet_info_impl),
-        "monitor_get_transactions_by_wallet":(MonitorGetTransactionsByWalletInput, _get_transactions_by_wallet_impl),
-        "monitor_get_estimated_fee":         (MonitorGetEstimatedFeeInput, _get_estimated_fee_impl),
-        "monitor_wait_for_block":            (MonitorWaitForBlockInput, _wait_for_block_impl),
-        "monitor_wait_for_smart_transaction":(MonitorWaitForSmartTransactionInput, _wait_for_smart_transaction_impl),
-    }
-
-    @server.call_tool()
-    async def _call(name: str, arguments: dict) -> list[TextContent]:
-        client = server.gateway  # type: ignore[attr-defined]
-        if name not in _DISPATCH:
-            raise ValueError(f"Unknown tool: {name}")
-        cls, impl = _DISPATCH[name]
-        inp = cls.model_validate(arguments)
-        res = await impl(client, inp)
-        return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
+_TOOL_DEFS = [
+    Tool(
+        name="monitor_get_balance",
+        description=(
+            "Read the CS balance + delegation totals of a Credits wallet. "
+            "Read-only. Input: { PublicKey: <base58> }."
+        ),
+        inputSchema=MonitorGetBalanceInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="monitor_get_wallet_info",
+        description=(
+            "Read full wallet data: balance + lastTransactionId + delegations "
+            "(incoming/outgoing totals + donors/recipients lists). Read-only."
+        ),
+        inputSchema=MonitorGetWalletInfoInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="monitor_get_transactions_by_wallet",
+        description=(
+            "Paginated transaction history for a wallet. Returns id, sum, fee, "
+            "from/to, time, status, currency. Default page size 10, max 500. Read-only."
+        ),
+        inputSchema=MonitorGetTransactionsByWalletInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="monitor_get_estimated_fee",
+        description="Estimate fee for a transaction of given byte size. Read-only.",
+        inputSchema=MonitorGetEstimatedFeeInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="monitor_wait_for_block",
+        description=(
+            "Long-poll: blocks until a new pool is sealed on the node, or "
+            "timeoutMs elapses. Returns blockHash + `changed` flag. Read-only."
+        ),
+        inputSchema=MonitorWaitForBlockInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="monitor_wait_for_smart_transaction",
+        description=(
+            "Long-poll: blocks until the next smart-contract transaction "
+            "targeting `address` is sealed. Returns transactionId + found. Read-only."
+        ),
+        inputSchema=MonitorWaitForSmartTransactionInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+]
