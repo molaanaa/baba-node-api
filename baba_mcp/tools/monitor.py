@@ -29,6 +29,10 @@ class MonitorGetTransactionsByWalletInput(PaginatedInput):
     pass
 
 
+class MonitorGetEstimatedFeeInput(_Base):
+    transaction_size: int = Field(alias="transactionSize", ge=0)
+
+
 # ---------- Implementations (testabili in isolamento) ----------
 
 async def _get_balance_impl(client, inp: MonitorGetBalanceInput) -> Mapping[str, Any]:
@@ -41,6 +45,10 @@ async def _get_wallet_info_impl(client, inp: MonitorGetWalletInfoInput) -> Mappi
 
 async def _get_transactions_by_wallet_impl(client, inp: MonitorGetTransactionsByWalletInput) -> Mapping[str, Any]:
     return await call_gateway(client, "/api/Monitor/GetTransactionsByWallet", inp)
+
+
+async def _get_estimated_fee_impl(client, inp: MonitorGetEstimatedFeeInput) -> Mapping[str, Any]:
+    return await call_gateway(client, "/api/Monitor/GetEstimatedFee", inp)
 
 
 # ---------- Registration ----------
@@ -76,6 +84,12 @@ def register(server: Server) -> None:
                 inputSchema=MonitorGetTransactionsByWalletInput.model_json_schema(by_alias=True),
                 annotations={"readOnlyHint": True},
             ),
+            Tool(
+                name="monitor_get_estimated_fee",
+                description="Estimate fee for a transaction of given byte size. Read-only.",
+                inputSchema=MonitorGetEstimatedFeeInput.model_json_schema(by_alias=True),
+                annotations={"readOnlyHint": True},
+            ),
         ]
 
     @server.call_tool()
@@ -94,6 +108,11 @@ def register(server: Server) -> None:
         if name == "monitor_get_transactions_by_wallet":
             inp = MonitorGetTransactionsByWalletInput.model_validate(arguments)
             res = await _get_transactions_by_wallet_impl(client, inp)
+            import json
+            return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
+        if name == "monitor_get_estimated_fee":
+            inp = MonitorGetEstimatedFeeInput.model_validate(arguments)
+            res = await _get_estimated_fee_impl(client, inp)
             import json
             return [TextContent(type="text", text=json.dumps(res, ensure_ascii=False))]
         raise ValueError(f"Unknown tool: {name}")

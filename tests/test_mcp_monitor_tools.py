@@ -42,3 +42,13 @@ def test_get_transactions_by_wallet_passes_pagination():
     assert b'"offset": 10' in seen["body"]
     assert b'"limit": 20' in seen["body"]
     assert out["success"] is True
+
+
+from baba_mcp.tools.monitor import MonitorGetEstimatedFeeInput, _get_estimated_fee_impl
+
+def test_get_estimated_fee():
+    def handler(req):
+        return httpx.Response(200, json={"fee": 0.00874, "success": True, "message": ""})
+    c = make_client(handler)
+    out = asyncio.run(_get_estimated_fee_impl(c, MonitorGetEstimatedFeeInput(transactionSize=9)))
+    assert out["fee"] == 0.00874
