@@ -17,14 +17,25 @@ async def _active_nodes_impl(client, inp):
     return await call_gateway(client, "/api/Diag/GetActiveNodes", inp)
 
 
+async def _active_tx_count_impl(client, inp):
+    return await call_gateway(client, "/api/Diag/GetActiveTransactionsCount", inp)
+
+
 _DISPATCH: dict = {
     "diag_get_active_nodes": (DiagEmptyInput, _active_nodes_impl),
+    "diag_get_active_transactions_count": (DiagEmptyInput, _active_tx_count_impl),
 }
 
 _TOOL_DEFS = [
     Tool(
         name="diag_get_active_nodes",
         description="List trusted/active nodes seen by the local node. Read-only.",
+        inputSchema=DiagEmptyInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="diag_get_active_transactions_count",
+        description="Number of unconfirmed transactions currently in the mempool. Read-only.",
         inputSchema=DiagEmptyInput.model_json_schema(by_alias=True),
         annotations={"readOnlyHint": True},
     ),

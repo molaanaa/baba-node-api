@@ -15,3 +15,13 @@ def test_diag_get_active_nodes():
     c = make_client(handler)
     out = asyncio.run(_active_nodes_impl(c, DiagEmptyInput()))
     assert out["nodes"][0]["publicKey"] == "NodeB58"
+
+
+from baba_mcp.tools.diag import _active_tx_count_impl
+
+def test_diag_active_tx_count():
+    def handler(req):
+        return httpx.Response(200, json={"count": 17, "success": True, "message": None})
+    c = make_client(handler)
+    out = asyncio.run(_active_tx_count_impl(c, DiagEmptyInput()))
+    assert out["count"] == 17
