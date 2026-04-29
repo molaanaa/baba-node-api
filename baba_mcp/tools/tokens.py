@@ -6,7 +6,7 @@ from pydantic import Field
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 
-from baba_mcp.schemas import _Base, TokenAddressInput
+from baba_mcp.schemas import _Base, TokenAddressInput, PaginatedInput
 from baba_mcp.tools._helpers import call_gateway
 
 
@@ -17,8 +17,16 @@ async def _info_impl(client, inp):
     return await call_gateway(client, "/api/Tokens/Info", inp)
 
 
+class TokensBalancesGetInput(PaginatedInput):
+    pass
+
+async def _balances_get_impl(client, inp):
+    return await call_gateway(client, "/api/Tokens/BalancesGet", inp)
+
+
 _DISPATCH: dict = {
     "tokens_info": (TokensInfoInput, _info_impl),
+    "tokens_balances_get": (TokensBalancesGetInput, _balances_get_impl),
 }
 
 _TOOL_DEFS = [
@@ -29,6 +37,12 @@ _TOOL_DEFS = [
             "Read-only."
         ),
         inputSchema=TokensInfoInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="tokens_balances_get",
+        description="List token balances for a wallet (paginated). Read-only.",
+        inputSchema=TokensBalancesGetInput.model_json_schema(by_alias=True),
         annotations={"readOnlyHint": True},
     ),
 ]
