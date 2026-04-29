@@ -50,8 +50,8 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
             res = client.WaitForBlock(obsolete_bytes)
             return jsonify(_monitor.map_block_response(res, obsolete_bytes))
         except Exception as e:
-            log(f"WaitForBlock Error: {e}", is_error=True)
-            return jsonify({"success": False, "message": "WaitForBlock failed"}), 504
+            log(f"WaitForBlock Error: {type(e).__name__}: {e!r}", is_error=True)
+            return jsonify({"success": False, "message": f"WaitForBlock failed: {type(e).__name__}: {e}"}), 504
         finally:
             if transport and transport.isOpen():
                 transport.close()
@@ -61,7 +61,8 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
     @limiter.limit("2 per second; 60 per minute")
     def wait_for_smart_transaction():
         data = request.json or {}
-        pub = get_json_val(data, ["publicKey", "PublicKey", "smartContract", "SmartContract"], "")
+        pub = get_json_val(data, ["publicKey", "PublicKey", "smartContract", "SmartContract",
+                                  "address", "Address"], "")
         if not pub:
             return jsonify({"success": False, "message": "Missing publicKey"}), 400
         try:
@@ -102,11 +103,27 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
             tx_id_obj = api_types.TransactionId()
             tx_id_obj.poolSeq = int(pool_seq_str)
             tx_id_obj.index = int(index_str) - 1
-            res = client.TransactionResultGet(tx_id_obj)
+
+            inner_id = None
+            try:
+                tx_get = client.TransactionGet(tx_id_obj)
+                sealed = getattr(tx_get, "transaction", None)
+                trxn = getattr(sealed, "trxn", None) if sealed else None
+                inner_id = getattr(trxn, "id", None) if trxn else None
+            except Exception as lookup_err:
+                log(f"TransactionResult: lookup failed: {type(lookup_err).__name__}: {lookup_err!r}", is_error=True)
+
+            if inner_id is None:
+                return jsonify({
+                    "success": False, "found": False,
+                    "message": "Transaction not found or has no innerId — required for TransactionResultGet",
+                }), 404
+
+            res = client.TransactionResultGet(int(inner_id))
             return jsonify(_monitor.map_tx_result(res))
         except Exception as e:
-            log(f"TransactionResultGet Error: {e}", is_error=True)
-            return jsonify({"success": False, "message": "TransactionResultGet failed"}), 400
+            log(f"TransactionResultGet Error: {type(e).__name__}: {e!r}", is_error=True)
+            return jsonify({"success": False, "message": f"TransactionResultGet failed: {type(e).__name__}: {e}"}), 400
         finally:
             if transport and transport.isOpen():
                 transport.close()

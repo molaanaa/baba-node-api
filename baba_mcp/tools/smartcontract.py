@@ -94,7 +94,8 @@ async def _state_impl(client, inp):
 
 
 class SmartContractListByWalletInput(_Base):
-    deployer: str
+    deployer: str = Field(alias="publicKey",
+        description="Deployer wallet base58 public key (sent as `publicKey` to the gateway)")
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=10, ge=1, le=500)
 

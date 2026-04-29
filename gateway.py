@@ -497,7 +497,7 @@ def handle_get_transaction_info():
             "transactionTypeDefinition": type_defs.get(type_int, f"TT_Unknown_{type_int}"),
             "blockNum": pool_seq_str,
             "found": True,
-            "userData": getattr(data, 'userFields', b'').decode('utf-8', 'ignore'),
+            "userData": (getattr(data, 'userFields', b'') or b'').decode('utf-8', 'ignore'),
             "signature": safe_b58(getattr(data, 'signature', b'') or getattr(sealed_tx, 'signature', b'')),
             "extraFee": mapped_extra_fees, 
             "bundle": None,
