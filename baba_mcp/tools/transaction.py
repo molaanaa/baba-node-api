@@ -18,8 +18,17 @@ async def _get_info_impl(client, inp):
     return await call_gateway(client, "/api/Transaction/GetTransactionInfo", inp)
 
 
+class TransactionPackInput(TransferIntent):
+    pass
+
+
+async def _pack_impl(client, inp):
+    return await call_gateway(client, "/api/Transaction/Pack", inp)
+
+
 _DISPATCH: dict = {
     "transaction_get_info": (TransactionGetInfoInput, _get_info_impl),
+    "transaction_pack": (TransactionPackInput, _pack_impl),
 }
 
 _TOOL_DEFS = [
@@ -32,6 +41,18 @@ _TOOL_DEFS = [
         ),
         inputSchema=TransactionGetInfoInput.model_json_schema(by_alias=True),
         annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="transaction_pack",
+        description=(
+            "Build the canonical signing payload for a CS transfer. "
+            "Returns base58 `transactionPackagedStr` ready to be signed client-side "
+            "(ed25519). The payload encodes inner_id, source, target, amount, fee, "
+            "currency, userFields. Pass feeAsString=\"0\" to use the recommendedFee. "
+            "No on-chain side-effect."
+        ),
+        inputSchema=TransactionPackInput.model_json_schema(by_alias=True),
+        annotations={"idempotentHint": True},
     ),
 ]
 

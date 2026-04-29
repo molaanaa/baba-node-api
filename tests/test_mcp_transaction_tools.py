@@ -34,3 +34,30 @@ def test_get_info_invalid_id_raises_invalid_input():
     import pydantic
     with pytest.raises(pydantic.ValidationError):
         TransactionGetInfoInput(transactionId="not-a-tx-id")
+
+from baba_mcp.tools.transaction import TransactionPackInput, _pack_impl
+
+def test_pack_returns_packaged_str():
+    seen = {}
+    def handler(req):
+        seen["body"] = req.content
+        return httpx.Response(200, json={
+            "success": True,
+            "dataResponse": {
+                "transactionPackagedStr": "Pack58...", "recommendedFee": 0.00874,
+                "actualSum": 0, "publicKey": None, "smartContractResult": None,
+            },
+            "actualFee": 0, "actualSum": 0, "amount": 0, "blockId": 0,
+            "extraFee": None, "flowResult": None, "listItem": [],
+            "listTransactionInfo": None, "message": None,
+            "transactionId": None, "transactionInfo": None, "transactionInnerId": None,
+        })
+    c = make_client(handler)
+    inp = TransactionPackInput(
+        public_key="A", receiver_public_key="B",
+        amount_as_string="0.001", fee_as_string="0",
+    )
+    out = asyncio.run(_pack_impl(c, inp))
+    assert out["dataResponse"]["transactionPackagedStr"] == "Pack58..."
+    assert b'"PublicKey": "A"' in seen["body"]
+    assert b'"ReceiverPublicKey": "B"' in seen["body"]
