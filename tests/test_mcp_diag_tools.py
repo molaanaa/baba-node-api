@@ -38,3 +38,16 @@ def test_diag_node_info():
     c = make_client(handler)
     out = asyncio.run(_node_info_impl(c, DiagEmptyInput()))
     assert out["nodeVersion"] == "5.x"
+
+
+from baba_mcp.tools.diag import _supply_impl
+
+def test_diag_supply():
+    def handler(req):
+        return httpx.Response(200, json={
+            "initial": "250000000.0", "mined": "1234567.0",
+            "currentSupply": "251234567.0", "success": True, "message": None,
+        })
+    c = make_client(handler)
+    out = asyncio.run(_supply_impl(c, DiagEmptyInput()))
+    assert out["currentSupply"].startswith("251")

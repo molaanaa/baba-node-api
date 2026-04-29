@@ -25,10 +25,15 @@ async def _node_info_impl(client, inp):
     return await call_gateway(client, "/api/Diag/GetNodeInfo", inp)
 
 
+async def _supply_impl(client, inp):
+    return await call_gateway(client, "/api/Diag/GetSupply", inp)
+
+
 _DISPATCH: dict = {
     "diag_get_active_nodes": (DiagEmptyInput, _active_nodes_impl),
     "diag_get_active_transactions_count": (DiagEmptyInput, _active_tx_count_impl),
     "diag_get_node_info": (DiagEmptyInput, _node_info_impl),
+    "diag_get_supply": (DiagEmptyInput, _supply_impl),
 }
 
 _TOOL_DEFS = [
@@ -47,6 +52,12 @@ _TOOL_DEFS = [
     Tool(
         name="diag_get_node_info",
         description="Local Credits node version, uptime, top block hash. Read-only.",
+        inputSchema=DiagEmptyInput.model_json_schema(by_alias=True),
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
+        name="diag_get_supply",
+        description="Total CS supply on the network: initial + mined + currentSupply. Read-only.",
         inputSchema=DiagEmptyInput.model_json_schema(by_alias=True),
         annotations={"readOnlyHint": True},
     ),
