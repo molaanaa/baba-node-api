@@ -450,6 +450,62 @@ The MCP server is a thin Python wrapper sitting on top of this gateway. It is
 **non-custodial**: it never holds private keys. The signing pipeline is
 `Pack → ed25519 sign (client-side) → Execute → Wait`.
 
+### 📲 Connect from Claude (mobile, desktop, or web) in 30 seconds
+
+If a public **`baba-credits`** MCP is already running and you just want to plug
+your Claude client into it:
+
+**You'll need from the operator:**
+- ① a **URL**, e.g. `https://mcp.example.com/sse`
+- ② a **Bearer token** (a long random string, treat it like a password)
+
+**On Claude Desktop / Claude Code (any OS):** drop this into your config
+(`claude_desktop_config.json` on desktop, `.mcp.json` at the repo root for
+Claude Code). Replace the two placeholders:
+
+```json
+{
+  "mcpServers": {
+    "baba-credits": {
+      "url": "https://mcp.example.com/sse",
+      "headers": {
+        "Authorization": "Bearer PASTE-YOUR-TOKEN-HERE"
+      }
+    }
+  }
+}
+```
+
+Restart Claude. The 29 tools (`monitor_get_balance`, `transaction_pack`,
+`smartcontract_deploy`, …) appear in the MCP picker. Try
+*"What's the CS balance of wallet `<your address>`?"* to confirm.
+
+**On Claude.ai (web app, including the iOS / Android browser):** Settings →
+**Connectors** → **Add custom connector** → paste the same URL and token.
+Save. Open a new chat, the connector toggles on the prompt bar.
+
+**One-tap link** (some clients support `mcp+sse://` URI scheme):
+
+```
+mcp+sse://PASTE-YOUR-TOKEN-HERE@mcp.example.com/sse
+```
+
+Treat the URL above as plain Markdown — copy it, replace the token, and your
+client (if it supports the scheme) will pre-fill the connector dialog.
+
+> **Self-signed cert?** If the operator hasn't installed a Let's Encrypt
+> certificate, the URL likely uses an IP and a self-signed cert. Many mobile
+> apps will refuse it. Either ask the operator to add a real domain + TLS, or
+> manually trust the cert on your device (iOS: install via Profile, then
+> *Settings → General → About → Certificate Trust Settings*; Android:
+> *Settings → Security → Encryption & credentials → Install certificate*).
+
+> **Want to host your own?** Keep reading — the rest of this section walks
+> you through running the server, signing transactions, and securing the
+> endpoint.
+
+---
+
 ### Quick start (bundled with the gateway via pm2)
 
 ```bash
