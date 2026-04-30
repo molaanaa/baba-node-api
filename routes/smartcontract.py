@@ -23,6 +23,7 @@ import base58
 from flask import Blueprint, jsonify, request
 
 from services import contracts as _contracts
+from services.monitor import _variant_to_python
 
 
 def _poll_sealed_tx_by_inner_id(get_node_client, source_bytes, inner_id, *,
@@ -136,11 +137,17 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
                     f"{getattr(tx_id, 'poolSeq', 0)}.{getattr(tx_id, 'index', 0) + 1}"
                     if tx_id and hasattr(tx_id, "poolSeq") else None
                 )
+                # smart_contract_result is a Thrift Variant (general.Variant
+                # wrapping the contract method's return value, e.g. v_string
+                # for getSymbol(), v_boolean for transfer(), etc.). Decode it
+                # so the client receives a plain JSON value instead of an
+                # opaque Thrift object that jsonify can't introspect.
+                scr = _variant_to_python(getattr(res, "smart_contract_result", None))
                 return jsonify({
                     "amount": full_decimal(amount_str),
                     "dataResponse": {
                         "actualSum": 0, "publicKey": None, "recommendedFee": float(rec_fee),
-                        "smartContractResult": getattr(res, "smart_contract_result", None),
+                        "smartContractResult": scr,
                         "transactionPackagedStr": None,
                     },
                     "actualSum": full_decimal(getattr(res, "sum", amount_str)),
@@ -163,11 +170,26 @@ def make_blueprint(*, limiter, log, get_node_client, get_json_val,
         if sealed_tx_id:
             log(f"SmartContract recovered: tx {sealed_tx_id} sealed for inner_id={inner_id}",
                 is_error=False)
+            # Best-effort: fetch the smart_contract_result via TransactionResultGet
+            # so the client gets the same shape as the happy-path response.
+            scr = None
+            try:
+                client_r, transport_r = get_node_client()
+                if client_r:
+                    try:
+                        rres = client_r.TransactionResultGet(int(inner_id))
+                        scr = _variant_to_python(getattr(rres, "smart_contract_result", None))
+                    finally:
+                        if transport_r and transport_r.isOpen():
+                            transport_r.close()
+            except Exception as e:
+                log(f"SmartContract recovery: TransactionResultGet failed: {type(e).__name__}: {e!r}",
+                    is_error=False)
             return jsonify({
                 "amount": full_decimal(amount_str),
                 "dataResponse": {
                     "actualSum": 0, "publicKey": None, "recommendedFee": float(rec_fee),
-                    "smartContractResult": None, "transactionPackagedStr": None,
+                    "smartContractResult": scr, "transactionPackagedStr": None,
                 },
                 "actualSum": full_decimal(amount_str),
                 "actualFee": full_decimal(rec_fee),

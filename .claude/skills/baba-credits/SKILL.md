@@ -3,10 +3,12 @@ name: baba-credits
 description: |
   Use when the user wants to interact with the Credits blockchain via the
   baba-credits MCP server — sending CS transfers, deploying/calling Java
-  smart contracts, querying balances, transactions, tokens, attaching
-  userFields metadata (ArtVerse-style), or running node diagnostics.
+  smart contracts, querying balances, transactions, tokens, inscribing
+  ordinals-style on-chain metadata via userFields v1, or running node
+  diagnostics.
   Triggers when the user mentions: Credits, CS coin, $CS, baba-credits,
-  Credits wallet, BABA Wallet, smart contract on Credits, ArtVerse mint.
+  Credits wallet, BABA Wallet, smart contract on Credits, on-chain
+  ordinal/inscription, userFields metadata.
 ---
 
 # baba-credits
@@ -38,7 +40,7 @@ For read-only inspection just call the corresponding `*_get_*`, `*_info`,
 - "Send N CS from A to B" → recipe `transfer-cs.md`
 - "Deploy this Java contract" → recipe `deploy-contract.md`
 - "Call method `x` on contract C" → recipe `execute-method.md`
-- "Mint an ArtVerse asset" → recipe `attach-metadata.md` + `transfer-cs.md`
+- "Inscribe an ordinal" / "Attach metadata to a tx" / "Mint an on-chain asset" → recipe `attach-metadata.md` + `transfer-cs.md`
 - "Show me details of the network" → `diag_*`
 - "Wait until the next block" → `monitor_wait_for_block` (long-poll)
 
@@ -77,7 +79,7 @@ See `tools-reference.md` for the full catalog (29 tools, 6 categories).
 |---|---|---|
 | `monitor_*` | 6 | balance, history, fee estimation, long-poll waits |
 | `transaction_*` | 4 | get/pack/execute/result for plain CS transfers |
-| `userfields_*` | 2 | encode/decode of v1 metadata blobs (ArtVerse) |
+| `userfields_*` | 2 | encode/decode of v1 on-chain metadata blobs (ordinals-style inscription) |
 | `tokens_*` | 5 | balances, transfers, info, holders, transactions |
 | `smartcontract_*` | 8 | compile, pack, deploy, execute, get, methods, state, list |
 | `diag_*` | 4 | active nodes, mempool count, node info, supply |
@@ -88,7 +90,7 @@ See `tools-reference.md` for the full catalog (29 tools, 6 categories).
 - `recipes/deploy-contract.md` — Java contract on-chain
 - `recipes/execute-method.md` — call a method on a deployed contract
 - `recipes/inspect-wallet.md` — read-only exploration
-- `recipes/attach-metadata.md` — userFields v1 (ArtVerse minting)
+- `recipes/attach-metadata.md` — userFields v1 ordinals-style on-chain inscription
 - `recipes/token-operations.md` — token info / balances / transfers / holders
 
 ## Client-side signing

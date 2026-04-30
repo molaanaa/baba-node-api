@@ -24,7 +24,7 @@ dashboards) with a raw Credits Node (Thrift/TCP). Built for the
   upstream review surface stays small
 - ⛓ **Smart Contract pipeline** — Compile → Pack → sign offline → Deploy/Execute,
   with on-chain validation against mainnet
-- 🪪 **ArtVerse `userFields` v1** — typed metadata codec with stable wire format
+- 🪪 **Ordinals-style `userFields` v1** — typed on-chain metadata codec with a stable wire format for inscription workflows (digest + IPFS CID + mime + size)
 
 ---
 
@@ -51,7 +51,7 @@ routes/
   monitor_wait.py     # /Monitor/WaitForBlock|WaitForSmartTransaction, /Transaction/Result
   smartcontract.py    # /SmartContract/Compile|Get|Methods|State|ListByWallet|Pack|Deploy|Execute
 services/
-  userfields.py       # ArtVerse v1 codec (encode/decode)
+  userfields.py       # Ordinals-style v1 metadata codec (encode/decode)
   monitor.py          # WaitForBlock / TransactionResult mappers + Variant decoder
   tokens.py           # Token mappers
   diag.py             # API_DIAG mappers
@@ -241,7 +241,7 @@ bytecode travels as **base64** (consistent with `SmartContractCompile`).
 `WAIT_MAX_TIMEOUT_MS` from the environment (default 120s). The socket waits
 5s longer than the requested wait so the node can complete in-flight work.
 
-### UserFields v1 codec (ArtVerse, local)
+### UserFields v1 codec (ordinals-style on-chain metadata, local)
 
 | Method | Endpoint |
 |---|---|
@@ -346,7 +346,7 @@ curl -X POST http://localhost:5000/api/Monitor/WaitForBlock \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 30000}'
 
-# Encode an ArtVerse userFields v1 payload
+# Encode an ordinals-style userFields v1 payload (on-chain inscription)
 curl -X POST http://localhost:5000/api/UserFields/Encode \
   -H "Content-Type: application/json" \
   -d '{
@@ -450,6 +450,62 @@ The MCP server is a thin Python wrapper sitting on top of this gateway. It is
 **non-custodial**: it never holds private keys. The signing pipeline is
 `Pack → ed25519 sign (client-side) → Execute → Wait`.
 
+### 📲 Connect from Claude (mobile, desktop, or web) in 30 seconds
+
+If a public **`baba-credits`** MCP is already running and you just want to plug
+your Claude client into it:
+
+**You'll need from the operator:**
+- ① a **URL**, e.g. `https://mcp.example.com/sse`
+- ② a **Bearer token** (a long random string, treat it like a password)
+
+**On Claude Desktop / Claude Code (any OS):** drop this into your config
+(`claude_desktop_config.json` on desktop, `.mcp.json` at the repo root for
+Claude Code). Replace the two placeholders:
+
+```json
+{
+  "mcpServers": {
+    "baba-credits": {
+      "url": "https://mcp.example.com/sse",
+      "headers": {
+        "Authorization": "Bearer PASTE-YOUR-TOKEN-HERE"
+      }
+    }
+  }
+}
+```
+
+Restart Claude. The 29 tools (`monitor_get_balance`, `transaction_pack`,
+`smartcontract_deploy`, …) appear in the MCP picker. Try
+*"What's the CS balance of wallet `<your address>`?"* to confirm.
+
+**On Claude.ai (web app, including the iOS / Android browser):** Settings →
+**Connectors** → **Add custom connector** → paste the same URL and token.
+Save. Open a new chat, the connector toggles on the prompt bar.
+
+**One-tap link** (some clients support `mcp+sse://` URI scheme):
+
+```
+mcp+sse://PASTE-YOUR-TOKEN-HERE@mcp.example.com/sse
+```
+
+Treat the URL above as plain Markdown — copy it, replace the token, and your
+client (if it supports the scheme) will pre-fill the connector dialog.
+
+> **Self-signed cert?** If the operator hasn't installed a Let's Encrypt
+> certificate, the URL likely uses an IP and a self-signed cert. Many mobile
+> apps will refuse it. Either ask the operator to add a real domain + TLS, or
+> manually trust the cert on your device (iOS: install via Profile, then
+> *Settings → General → About → Certificate Trust Settings*; Android:
+> *Settings → Security → Encryption & credentials → Install certificate*).
+
+> **Want to host your own?** Keep reading — the rest of this section walks
+> you through running the server, signing transactions, and securing the
+> endpoint.
+
+---
+
 ### Quick start (bundled with the gateway via pm2)
 
 ```bash
@@ -459,6 +515,50 @@ pm2 start ecosystem.config.js && pm2 save
 #   gateway        on :5000 (HTTP REST)
 #   baba-mcp-http  on :7000 (MCP SSE)
 ```
+
+### Quick start (cross-platform launch script)
+
+The fastest way to bring the MCP server up — picks the right Python, creates
+the virtualenv, installs deps if missing, validates the gateway, and starts
+`python -m baba_mcp.server`:
+
+| Platform | Command |
+|---|---|
+| Linux / macOS | `bash scripts/launch-mcp.sh` |
+| Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -File scripts\launch-mcp.ps1` |
+
+Both scripts perform the same six steps and stream coloured ✓/⚠/✗ progress:
+
+1. Locate a **Python ≥ 3.10** interpreter (`mcp` SDK requires it). Probes
+   `python3.13 → python3.10`, then `py -3.x` on Windows.
+2. Create or reuse `.venv/` next to the repo.
+3. Install (or reinstall) `mcp`, `httpx`, `pydantic` from
+   `requirements.txt` if not yet present in the venv.
+4. Load `.env.mcp` (`BABA_GATEWAY_URL`, `MCP_TRANSPORT`,
+   `MCP_AUTH_TOKEN`, …) when present.
+5. Health-check the gateway with a single read-only POST to
+   `/api/Diag/GetSupply`. Aborts (exit 2) if unreachable, unless you pass
+   `SKIP_GATEWAY_CHECK=1`.
+6. `exec`s `python -m baba_mcp.server`, forwarding signals and exit code.
+
+Useful flags (same on both scripts):
+
+```bash
+bash scripts/launch-mcp.sh --no-pip          # skip the dep check (faster relaunch)
+bash scripts/launch-mcp.sh --reinstall       # force pip reinstall
+SKIP_GATEWAY_CHECK=1 bash scripts/launch-mcp.sh   # bypass health-check
+MCP_TRANSPORT=http bash scripts/launch-mcp.sh     # HTTP/SSE instead of stdio
+```
+
+```powershell
+.\scripts\launch-mcp.ps1 -NoPip
+.\scripts\launch-mcp.ps1 -Reinstall
+.\scripts\launch-mcp.ps1 -SkipGatewayCheck
+$env:MCP_TRANSPORT = 'http'; .\scripts\launch-mcp.ps1
+```
+
+Full configuration reference (env vars, `.mcp.json`, signing material) is
+below.
 
 ### Configure an agent
 
@@ -624,7 +724,7 @@ implemented tool end-to-end against a live node (run with
 |---|---|---|
 | `monitor_*`        | 6 | balance, history, fee estimation, long-poll waits |
 | `transaction_*`    | 4 | get/pack/execute/result for plain CS transfers |
-| `userfields_*`     | 2 | encode/decode of v1 metadata blobs (ArtVerse) |
+| `userfields_*`     | 2 | encode/decode of v1 on-chain metadata blobs (ordinals-style inscription) |
 | `tokens_*`         | 5 | balances, transfers, info, holders, transactions |
 | `smartcontract_*`  | 8 | compile, pack, deploy, execute, get, methods, state, list |
 | `diag_*`           | 4 | active nodes, mempool count, node info, supply |
@@ -685,7 +785,7 @@ MIT License
 - Designed for high-uptime blockchain infrastructure
 - Safe against common Credits Node crashes (defensive Thrift accessors,
   fallback for renamed/optional fields)
-- Optimized for mobile wallet backends and ArtVerse content workflows
+- Optimized for mobile wallet backends and ordinals-style on-chain content workflows
 
 💡 If this project helps you build on the Credits Blockchain, consider
 starring the repo!
