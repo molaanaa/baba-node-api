@@ -30,6 +30,14 @@ class SmartContractPackInput(_Base):
         description="Variant list for execute method args")
     fee_as_string: str = Field(alias="feeAsString", default="0")
     user_data: str = Field(alias="UserData", default="")
+    forget_new_state: Optional[bool] = Field(alias="forgetNewState", default=None,
+        description=(
+            "execute-only: when True the executor runs the method but the "
+            "resulting state is dropped. Use for read-only getters that need "
+            "the return value populated. The same value MUST be re-passed to "
+            "smartcontract_execute, otherwise the canonical signing payload "
+            "differs and the node rejects the signature."
+        ))
 
 async def _pack_impl(client, inp):
     return await call_gateway(client, "/api/SmartContract/Pack", inp)
@@ -60,6 +68,15 @@ class SmartContractExecuteInput(_Base):
     transaction_inner_id: int = Field(alias="transactionInnerId", ge=1)
     fee_as_string: str = Field(alias="feeAsString", default="0")
     user_data: str = Field(alias="UserData", default="")
+    forget_new_state: bool = Field(alias="forgetNewState", default=False,
+        description=(
+            "When True, the executor runs the method but the resulting state "
+            "(and any persistent side-effect) is dropped. Use for read-only "
+            "getters where you want the return value without paying for state "
+            "persistence. The on-chain transaction is still sealed and fee "
+            "is still consumed. Required by some Credits node versions to "
+            "actually populate `smartContractResult` in the response."
+        ))
 
 async def _execute_impl(client, inp):
     return await call_gateway(client, "/api/SmartContract/Execute", inp)

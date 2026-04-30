@@ -141,10 +141,41 @@ async def _run_http(server: Server, host: str, port: int,
                     )
             return await call_next(request)
 
+    class SseNoBufferMiddleware(BaseHTTPMiddleware):
+        """Force reverse proxies / tunnels (Cloudflare, Nginx, Envoy, …) not
+        to buffer the SSE response.
+
+        SSE relies on the server flushing the first ``event:`` frame to the
+        client immediately so the MCP handshake can start. When the response
+        is hidden behind a buffering intermediary the first bytes are held
+        until the stream closes (or a buffer threshold is reached), which
+        looks like a 30s hang from the client's side.
+
+        Setting ``X-Accel-Buffering: no`` is the documented opt-out for
+        Nginx and is honoured by Cloudflare Tunnel and a few other proxies.
+        ``Cache-Control: no-cache`` and ``Connection: keep-alive`` are
+        belt-and-braces hints for the same purpose.
+
+        Only applied to ``/sse`` so the JSON ``/messages/`` posts are
+        unaffected.
+        """
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            if request.url.path == "/sse":
+                response.headers["X-Accel-Buffering"] = "no"
+                response.headers["Cache-Control"] = "no-cache"
+                response.headers["Connection"] = "keep-alive"
+            return response
+
     app = Starlette(routes=[
         Route("/sse", handle_sse),
         Mount("/messages/", app=sse.handle_post_message),
     ])
+    # Order matters: middlewares wrap the app inside-out (last added is
+    # outermost). Add SseNoBuffer first so it runs *closer* to the route,
+    # then auth on the outside so unauthorised requests never reach the SSE
+    # path at all.
+    app.add_middleware(SseNoBufferMiddleware)
     if auth_token or (whitelist_ips and "0.0.0.0/0" not in whitelist_ips):
         app.add_middleware(AuthMiddleware)
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
