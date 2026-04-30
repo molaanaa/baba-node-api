@@ -460,6 +460,50 @@ pm2 start ecosystem.config.js && pm2 save
 #   baba-mcp-http  on :7000 (MCP SSE)
 ```
 
+### Quick start (cross-platform launch script)
+
+The fastest way to bring the MCP server up — picks the right Python, creates
+the virtualenv, installs deps if missing, validates the gateway, and starts
+`python -m baba_mcp.server`:
+
+| Platform | Command |
+|---|---|
+| Linux / macOS | `bash scripts/launch-mcp.sh` |
+| Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -File scripts\launch-mcp.ps1` |
+
+Both scripts perform the same six steps and stream coloured ✓/⚠/✗ progress:
+
+1. Locate a **Python ≥ 3.10** interpreter (`mcp` SDK requires it). Probes
+   `python3.13 → python3.10`, then `py -3.x` on Windows.
+2. Create or reuse `.venv/` next to the repo.
+3. Install (or reinstall) `mcp`, `httpx`, `pydantic` from
+   `requirements.txt` if not yet present in the venv.
+4. Load `.env.mcp` (`BABA_GATEWAY_URL`, `MCP_TRANSPORT`,
+   `MCP_AUTH_TOKEN`, …) when present.
+5. Health-check the gateway with a single read-only POST to
+   `/api/Diag/GetSupply`. Aborts (exit 2) if unreachable, unless you pass
+   `SKIP_GATEWAY_CHECK=1`.
+6. `exec`s `python -m baba_mcp.server`, forwarding signals and exit code.
+
+Useful flags (same on both scripts):
+
+```bash
+bash scripts/launch-mcp.sh --no-pip          # skip the dep check (faster relaunch)
+bash scripts/launch-mcp.sh --reinstall       # force pip reinstall
+SKIP_GATEWAY_CHECK=1 bash scripts/launch-mcp.sh   # bypass health-check
+MCP_TRANSPORT=http bash scripts/launch-mcp.sh     # HTTP/SSE instead of stdio
+```
+
+```powershell
+.\scripts\launch-mcp.ps1 -NoPip
+.\scripts\launch-mcp.ps1 -Reinstall
+.\scripts\launch-mcp.ps1 -SkipGatewayCheck
+$env:MCP_TRANSPORT = 'http'; .\scripts\launch-mcp.ps1
+```
+
+Full configuration reference (env vars, `.mcp.json`, signing material) is
+below.
+
 ### Configure an agent
 
 The MCP server exposes 29 tools (1:1 with the gateway REST endpoints) and
