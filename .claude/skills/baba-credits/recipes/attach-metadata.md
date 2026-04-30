@@ -1,10 +1,11 @@
-# Recipe: attach userFields v1 metadata to a transaction (ArtVerse)
+# Recipe: inscribe ordinals-style metadata on a transaction (`userFields` v1)
 
 ## When to use
 The user wants to anchor an off-chain asset (image, video, document) to a
-Credits transaction with verifiable metadata: SHA-256 hash, IPFS CID, MIME
-type, size. Typical use case: ArtVerse minting — a transfer that doubles as
-a "proof of authorship" record.
+Credits transaction with verifiable, structured metadata: SHA-256 hash,
+IPFS CID, MIME type, size. Typical use cases: on-chain inscription /
+"ordinal" minting — a transfer that doubles as a proof-of-authorship record
+or a content-addressable asset registry.
 
 ## Prerequisites
 - The asset itself, hashed with SHA-256 (32 bytes, hex-encoded).

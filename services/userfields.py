@@ -1,10 +1,17 @@
-"""ArtVerse userFields v1 codec.
+"""userFields v1 codec — ordinals-style on-chain metadata for Credits.
+
+Encodes a small structured payload (digest, IPFS CID, MIME, size, optional
+TLV extensions) into a base58 blob suitable for the `UserData` field of a
+Credits transaction, so the chain carries a verifiable reference to the
+off-chain asset. Decoding round-trips the same fields.
 
 Wire format (binary):
 
     userFields := MAGIC | VERSION | TLV_RECORDS
 
-    MAGIC      = b"ARTV"      (4 bytes ASCII)
+    MAGIC      = b"ARTV"      (4 bytes ASCII; legacy magic, retained for
+                              backwards compatibility with existing inscribed
+                              transactions and test vectors)
     VERSION    = 0x01         (1 byte)
     TLV_RECORDS = (TYPE | LEN | VALUE)*
         TYPE  = 1 byte
