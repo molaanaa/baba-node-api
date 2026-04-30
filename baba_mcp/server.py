@@ -101,10 +101,14 @@ async def _run_stdio(server: Server) -> None:
         await server.run(read, write, server.create_initialization_options())
 
 
-async def _run_http(server: Server, host: str, port: int) -> None:
+async def _run_http(server: Server, host: str, port: int,
+                    auth_token: Optional[str] = None,
+                    whitelist_ips: Optional[list[str]] = None) -> None:
     from mcp.server.sse import SseServerTransport
     import uvicorn
     from starlette.applications import Starlette
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import PlainTextResponse
     from starlette.routing import Route, Mount
 
     sse = SseServerTransport("/messages/")
@@ -113,10 +117,36 @@ async def _run_http(server: Server, host: str, port: int) -> None:
         async with sse.connect_sse(request.scope, request.receive, request._send) as (r, w):
             await server.run(r, w, server.create_initialization_options())
 
+    class AuthMiddleware(BaseHTTPMiddleware):
+        """Optional Bearer-token + IP allowlist gate on /sse and /messages/.
+
+        Active only when ``auth_token`` is set or ``whitelist_ips`` is non-default.
+        Returns 401 on missing/wrong token, 403 on disallowed IP.
+        """
+        async def dispatch(self, request, call_next):
+            client_ip = (request.client.host if request.client else None) or "unknown"
+            if whitelist_ips and "0.0.0.0/0" not in whitelist_ips:
+                if client_ip not in whitelist_ips:
+                    return PlainTextResponse(
+                        f"403 Forbidden: client {client_ip} not in MCP_WHITELIST_IPS",
+                        status_code=403,
+                    )
+            if auth_token:
+                header = request.headers.get("authorization", "")
+                expected = f"Bearer {auth_token}"
+                if header != expected:
+                    return PlainTextResponse(
+                        "401 Unauthorized: missing or invalid Bearer token",
+                        status_code=401,
+                    )
+            return await call_next(request)
+
     app = Starlette(routes=[
         Route("/sse", handle_sse),
         Mount("/messages/", app=sse.handle_post_message),
     ])
+    if auth_token or (whitelist_ips and "0.0.0.0/0" not in whitelist_ips):
+        app.add_middleware(AuthMiddleware)
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     await uvicorn.Server(config).serve()
 
@@ -134,7 +164,9 @@ def main() -> None:
                 "MCP exposed on %s without MCP_AUTH_TOKEN — strongly recommended for production",
                 cfg.http_host,
             )
-        asyncio.run(_run_http(server, cfg.http_host, cfg.http_port))
+        asyncio.run(_run_http(server, cfg.http_host, cfg.http_port,
+                              auth_token=cfg.auth_token,
+                              whitelist_ips=cfg.whitelist_ips))
     else:
         raise SystemExit(f"Unknown MCP_TRANSPORT={cfg.transport!r}")
 
