@@ -742,4 +742,9 @@ app.register_blueprint(_make_smartcontract_bp(
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Behind a reverse proxy (Nginx + TLS) bind to 127.0.0.1 by exporting
+    # GATEWAY_HOST=127.0.0.1 in .env. Default keeps the historical
+    # 0.0.0.0:5000 behaviour for direct deployments.
+    bind_host = os.getenv('GATEWAY_HOST', '0.0.0.0')
+    bind_port = int(os.getenv('GATEWAY_PORT', '5000'))
+    app.run(host=bind_host, port=bind_port)
