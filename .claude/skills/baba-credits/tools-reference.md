@@ -301,9 +301,9 @@ transaction (executionTime, returnValue Variant, status).
 
 ## userfields_*
 
-Pure codec for the userFields v1 blob format used by ArtVerse and similar
-metadata-on-chain use cases. Both tools are read-only / idempotent — they
-never write on-chain.
+Pure codec for the userFields v1 blob format used to inscribe ordinals-style
+on-chain metadata (digest + IPFS CID + mime + size) onto a Credits transaction.
+Both tools are read-only / idempotent — they never write on-chain.
 
 ### `userfields_encode`
 **Endpoint:** `POST /api/UserFields/Encode`  **Annotations:** read-only, idempotent
@@ -326,8 +326,9 @@ never write on-chain.
 }
 ```
 
-**When to use:** Build the base58 `UserData` blob to attach metadata to a
-`transaction_pack`/`transaction_execute` call (ArtVerse mint).
+**When to use:** Build the base58 `UserData` blob to attach ordinals-style
+on-chain metadata to a `transaction_pack`/`transaction_execute` call
+(asset inscription).
 
 ---
 

@@ -24,7 +24,7 @@ dashboards) with a raw Credits Node (Thrift/TCP). Built for the
   upstream review surface stays small
 - ⛓ **Smart Contract pipeline** — Compile → Pack → sign offline → Deploy/Execute,
   with on-chain validation against mainnet
-- 🪪 **ArtVerse `userFields` v1** — typed metadata codec with stable wire format
+- 🪪 **Ordinals-style `userFields` v1** — typed on-chain metadata codec with a stable wire format for inscription workflows (digest + IPFS CID + mime + size)
 
 ---
 
@@ -51,7 +51,7 @@ routes/
   monitor_wait.py     # /Monitor/WaitForBlock|WaitForSmartTransaction, /Transaction/Result
   smartcontract.py    # /SmartContract/Compile|Get|Methods|State|ListByWallet|Pack|Deploy|Execute
 services/
-  userfields.py       # ArtVerse v1 codec (encode/decode)
+  userfields.py       # Ordinals-style v1 metadata codec (encode/decode)
   monitor.py          # WaitForBlock / TransactionResult mappers + Variant decoder
   tokens.py           # Token mappers
   diag.py             # API_DIAG mappers
@@ -241,7 +241,7 @@ bytecode travels as **base64** (consistent with `SmartContractCompile`).
 `WAIT_MAX_TIMEOUT_MS` from the environment (default 120s). The socket waits
 5s longer than the requested wait so the node can complete in-flight work.
 
-### UserFields v1 codec (ArtVerse, local)
+### UserFields v1 codec (ordinals-style on-chain metadata, local)
 
 | Method | Endpoint |
 |---|---|
@@ -346,7 +346,7 @@ curl -X POST http://localhost:5000/api/Monitor/WaitForBlock \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 30000}'
 
-# Encode an ArtVerse userFields v1 payload
+# Encode an ordinals-style userFields v1 payload (on-chain inscription)
 curl -X POST http://localhost:5000/api/UserFields/Encode \
   -H "Content-Type: application/json" \
   -d '{
@@ -724,7 +724,7 @@ implemented tool end-to-end against a live node (run with
 |---|---|---|
 | `monitor_*`        | 6 | balance, history, fee estimation, long-poll waits |
 | `transaction_*`    | 4 | get/pack/execute/result for plain CS transfers |
-| `userfields_*`     | 2 | encode/decode of v1 metadata blobs (ArtVerse) |
+| `userfields_*`     | 2 | encode/decode of v1 on-chain metadata blobs (ordinals-style inscription) |
 | `tokens_*`         | 5 | balances, transfers, info, holders, transactions |
 | `smartcontract_*`  | 8 | compile, pack, deploy, execute, get, methods, state, list |
 | `diag_*`           | 4 | active nodes, mempool count, node info, supply |
@@ -785,7 +785,7 @@ MIT License
 - Designed for high-uptime blockchain infrastructure
 - Safe against common Credits Node crashes (defensive Thrift accessors,
   fallback for renamed/optional fields)
-- Optimized for mobile wallet backends and ArtVerse content workflows
+- Optimized for mobile wallet backends and ordinals-style on-chain content workflows
 
 💡 If this project helps you build on the Credits Blockchain, consider
 starring the repo!
