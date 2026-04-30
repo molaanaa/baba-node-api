@@ -383,22 +383,74 @@ def map_methods(res: Any) -> dict:
 
 
 def map_state(res: Any) -> dict:
+    """Shape ``SmartContractDataResult`` (apihandler.cpp:2611) for the gateway.
+
+    The Thrift schema is::
+
+        struct SmartContractDataResult {
+            1: APIResponse status
+            2: list<SmartContractMethod> methods
+            3: map<string, Variant> variables
+        }
+
+    Both ``methods`` and ``variables`` are exposed: this is the most reliable
+    way to read a deployed contract's public surface plus its instance fields,
+    even when ``ContractMethodsGet(address)`` returns an empty list because
+    the executor hasn't cached the contract yet. ``variables`` is decoded
+    Variant-by-Variant so the client receives plain JSON values
+    (strings/ints/booleans) instead of opaque Thrift Variant blobs.
+    """
+    # Reuse the shared Variant decoder from services.monitor to avoid duplication.
+    from services.monitor import _variant_to_python  # local import — circular safe
+
     s = _status(res)
-    contract_state = getattr(res, "contractState", None) or getattr(res, "state", None)
-    variables_raw = getattr(res, "variables", None) or []
-    variables = []
-    for v in variables_raw:
-        variables.append(
-            {
-                "name": getattr(v, "name", None),
-                "type": getattr(v, "type", None),
-                "value": getattr(v, "value", None),
-            }
-        )
+    # variables: schema is map<string, Variant>; older / fork shapes may use
+    # a list<{name, type, value}> too — accept both for defensiveness.
+    variables_raw = getattr(res, "variables", None)
+    variables: list = []
+    if isinstance(variables_raw, dict):
+        for name, variant in variables_raw.items():
+            variables.append({
+                "name": name,
+                "value": _variant_to_python(variant),
+            })
+    elif variables_raw:
+        for v in variables_raw:
+            if isinstance(v, dict):
+                variables.append(v)
+            else:
+                raw_val = getattr(v, "value", None)
+                # If value is a Thrift Variant (has v_string/v_int/...), decode it.
+                # Otherwise pass through as-is so plain primitives stay plain.
+                decoded = _variant_to_python(raw_val) if any(
+                    hasattr(raw_val, a) for a in (
+                        "v_string", "v_int", "v_long", "v_boolean", "v_byte_array",
+                        "v_amount", "v_array", "v_map",
+                    )
+                ) else raw_val
+                variables.append({
+                    "name": getattr(v, "name", None),
+                    "type": getattr(v, "type", None),
+                    "value": decoded,
+                })
+
+    methods_raw = getattr(res, "methods", None) or []
+    methods = []
+    for m in methods_raw:
+        args_raw = getattr(m, "arguments", None) or []
+        methods.append({
+            "name": getattr(m, "name", None),
+            "returnType": getattr(m, "returnType", None),
+            "arguments": [
+                {"name": getattr(a, "name", None), "type": getattr(a, "type", None)}
+                for a in args_raw
+            ],
+        })
+
     return {
         "success": s["code"] == 0,
         "message": s["message"] or None,
-        "state": contract_state,
+        "methods": methods,
         "variables": variables,
     }
 

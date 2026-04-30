@@ -207,14 +207,43 @@ def test_map_methods_includes_arguments():
 
 
 def test_map_state_includes_variables():
+    # Legacy list-of-objects shape kept for backwards compatibility with
+    # forks that pre-date the proper map<string, Variant> Thrift schema.
     res = NS(
         status=OK,
-        contractState="<state-blob>",
         variables=[NS(name="counter", type="int", value="42")],
     )
     out = c.map_state(res)
-    assert out["state"] == "<state-blob>"
     assert out["variables"] == [{"name": "counter", "type": "int", "value": "42"}]
+
+
+def test_map_state_handles_thrift_map_variables():
+    # Real Thrift schema: variables: map<string, Variant>. Each Variant is
+    # decoded so the JSON-facing client gets a primitive instead of an
+    # opaque Thrift struct.
+    counter = NS(v_long=42)
+    name    = NS(v_string="EBB")
+    res = NS(status=OK, variables={"counter": counter, "name": name})
+    out = c.map_state(res)
+    decoded = {v["name"]: v["value"] for v in out["variables"]}
+    assert decoded == {"counter": 42, "name": "EBB"}
+
+
+def test_map_state_includes_methods_from_data_get():
+    # SmartContractDataResult also carries the contract's public methods.
+    method = NS(
+        name="transfer",
+        returnType="boolean",
+        arguments=[NS(name="to", type="String"), NS(name="amount", type="String")],
+    )
+    res = NS(status=OK, methods=[method], variables={})
+    out = c.map_state(res)
+    assert out["methods"][0]["name"] == "transfer"
+    assert out["methods"][0]["returnType"] == "boolean"
+    assert out["methods"][0]["arguments"] == [
+        {"name": "to", "type": "String"},
+        {"name": "amount", "type": "String"},
+    ]
 
 
 def test_map_list_by_wallet_serialises_contracts():
