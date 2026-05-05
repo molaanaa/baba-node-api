@@ -107,8 +107,6 @@ async def _run_http(server: Server, host: str, port: int,
     from mcp.server.sse import SseServerTransport
     import uvicorn
     from starlette.applications import Starlette
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.responses import PlainTextResponse
     from starlette.routing import Route, Mount
 
     sse = SseServerTransport("/messages/")
@@ -117,67 +115,74 @@ async def _run_http(server: Server, host: str, port: int,
         async with sse.connect_sse(request.scope, request.receive, request._send) as (r, w):
             await server.run(r, w, server.create_initialization_options())
 
-    class AuthMiddleware(BaseHTTPMiddleware):
-        """Optional Bearer-token + IP allowlist gate on /sse and /messages/.
-
-        Active only when ``auth_token`` is set or ``whitelist_ips`` is non-default.
-        Returns 401 on missing/wrong token, 403 on disallowed IP.
-        """
-        async def dispatch(self, request, call_next):
-            client_ip = (request.client.host if request.client else None) or "unknown"
-            if whitelist_ips and "0.0.0.0/0" not in whitelist_ips:
-                if client_ip not in whitelist_ips:
-                    return PlainTextResponse(
-                        f"403 Forbidden: client {client_ip} not in MCP_WHITELIST_IPS",
-                        status_code=403,
-                    )
-            if auth_token:
-                header = request.headers.get("authorization", "")
-                expected = f"Bearer {auth_token}"
-                if header != expected:
-                    return PlainTextResponse(
-                        "401 Unauthorized: missing or invalid Bearer token",
-                        status_code=401,
-                    )
-            return await call_next(request)
-
-    class SseNoBufferMiddleware(BaseHTTPMiddleware):
-        """Force reverse proxies / tunnels (Cloudflare, Nginx, Envoy, …) not
-        to buffer the SSE response.
-
-        SSE relies on the server flushing the first ``event:`` frame to the
-        client immediately so the MCP handshake can start. When the response
-        is hidden behind a buffering intermediary the first bytes are held
-        until the stream closes (or a buffer threshold is reached), which
-        looks like a 30s hang from the client's side.
-
-        Setting ``X-Accel-Buffering: no`` is the documented opt-out for
-        Nginx and is honoured by Cloudflare Tunnel and a few other proxies.
-        ``Cache-Control: no-cache`` and ``Connection: keep-alive`` are
-        belt-and-braces hints for the same purpose.
-
-        Only applied to ``/sse`` so the JSON ``/messages/`` posts are
-        unaffected.
-        """
-        async def dispatch(self, request, call_next):
-            response = await call_next(request)
-            if request.url.path == "/sse":
-                response.headers["X-Accel-Buffering"] = "no"
-                response.headers["Cache-Control"] = "no-cache"
-                response.headers["Connection"] = "keep-alive"
-            return response
-
-    app = Starlette(routes=[
+    inner_app = Starlette(routes=[
         Route("/sse", handle_sse),
         Mount("/messages/", app=sse.handle_post_message),
     ])
-    # Order matters: middlewares wrap the app inside-out (last added is
-    # outermost). Add SseNoBuffer first so it runs *closer* to the route,
-    # then auth on the outside so unauthorised requests never reach the SSE
-    # path at all.
-    app.add_middleware(SseNoBufferMiddleware)
-    if auth_token or (whitelist_ips and "0.0.0.0/0" not in whitelist_ips):
-        app.add_middleware(AuthMiddleware)
+
+    # Pure-ASGI middleware: BaseHTTPMiddleware breaks SSE streams
+    # ("TypeError: 'NoneType' object is not callable" when it tries to wrap
+    # the response of a transport that bypasses the middleware's send).
+    #
+    # Bearer is enforced ONLY on GET /sse (session establishment). The
+    # POST /messages/?session_id=... calls are authorised by the
+    # unguessable session_id minted by SseServerTransport after a
+    # successful handshake — that's the capability, not the bearer. The
+    # mobile / Anthropic-backed client sends the bearer on /sse only;
+    # gating /messages/ produces 401, which the upstream client surfaces
+    # as a content-length:0 403.
+    #
+    # On /sse we also inject X-Accel-Buffering / Cache-Control / Connection
+    # headers so reverse proxies (Nginx, Cloudflare Tunnel, Envoy) don't
+    # buffer the first event: frame.
+    async def _send_text(send, status, text):
+        body = text.encode("utf-8")
+        await send({"type": "http.response.start", "status": status,
+                    "headers": [(b"content-type", b"text/plain; charset=utf-8"),
+                                (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+    class AuthAndSseHeadersASGI:
+        def __init__(self, app, token, whitelist):
+            self.app = app
+            self.token = token
+            self.whitelist = whitelist
+
+        async def __call__(self, scope, receive, send):
+            if scope.get("type") != "http":
+                await self.app(scope, receive, send)
+                return
+            path = scope.get("path", "")
+            if self.whitelist and "0.0.0.0/0" not in self.whitelist:
+                client = scope.get("client") or ("unknown", 0)
+                if client[0] not in self.whitelist:
+                    await _send_text(send, 403,
+                        f"403 Forbidden: client {client[0]} not in MCP_WHITELIST_IPS")
+                    return
+            if self.token and path == "/sse":
+                hdrs = dict(scope.get("headers") or [])
+                got = hdrs.get(b"authorization", b"").decode("latin-1", "replace")
+                if got != f"Bearer {self.token}":
+                    await _send_text(send, 401,
+                        "401 Unauthorized: missing or invalid Bearer token")
+                    return
+
+            if path == "/sse":
+                async def send_with_sse_headers(message):
+                    if message["type"] == "http.response.start":
+                        extra = [
+                            (b"x-accel-buffering", b"no"),
+                            (b"cache-control", b"no-cache"),
+                            (b"connection", b"keep-alive"),
+                        ]
+                        message = dict(message)
+                        message["headers"] = list(message.get("headers") or []) + extra
+                    await send(message)
+                await self.app(scope, receive, send_with_sse_headers)
+            else:
+                await self.app(scope, receive, send)
+
+    app = AuthAndSseHeadersASGI(inner_app, auth_token, whitelist_ips)
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     await uvicorn.Server(config).serve()
 
